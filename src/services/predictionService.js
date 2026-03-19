@@ -146,10 +146,10 @@ async function predict(inputPayload) {
     const [clfOut] = Object.values(await clf.run({ float_input: tensor }));
     const [regOut] = Object.values(await reg.run({ float_input: tensor }));
 
-    const probData = clfOut.data;
-    const risk_probability = probData.length >= 2
-      ? Number(probData[1].toFixed(4))
-      : Number(probData[0].toFixed(4));
+const probData = clfOut.data;
+const risk_probability = probData.length >= 2
+  ? parseFloat(Number(probData[1]).toFixed(4))
+  : parseFloat(Number(probData[0]).toFixed(4));
 
     const risk_score = Math.min(1, Math.max(0, Number(Number(regOut.data[0]).toFixed(4))));
 

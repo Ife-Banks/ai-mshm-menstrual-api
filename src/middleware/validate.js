@@ -36,9 +36,11 @@ const cycleEntrySchema = Joi.object({
     .description('Did BBT chart / rPPG camera detect an ovulation peak this cycle?'),
   unusual_bleeding:   Joi.boolean().required()
     .description('Was there any bleeding outside the normal period this cycle?'),
+  rppg_ovulation_day: Joi.number().integer().min(1).max(35).allow(null).default(null)  // ← ADD THIS
+    .description('Optional: ovulation day detected by rPPG or wearable sensor. If null, server estimates as cycle_length - 14.'),
 }).custom((value, helpers) => {
   const start = new Date(value.period_start_date);
-  const end = new Date(value.period_end_date);
+  const end   = new Date(value.period_end_date);
   if (end < start) {
     return helpers.error('any.custom', { message: 'period_end_date must be after period_start_date' });
   }
