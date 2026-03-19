@@ -36,7 +36,7 @@ const cycleEntrySchema = Joi.object({
     .description('Did BBT chart / rPPG camera detect an ovulation peak this cycle?'),
   unusual_bleeding:   Joi.boolean().required()
     .description('Was there any bleeding outside the normal period this cycle?'),
-  rppg_ovulation_day: Joi.number().integer().min(1).max(35).allow(null).default(null)  // ← ADD THIS
+  rppg_ovulation_day: Joi.number().integer().min(1).max(35).allow(null).default(null)
     .description('Optional: ovulation day detected by rPPG or wearable sensor. If null, server estimates as cycle_length - 14.'),
 }).custom((value, helpers) => {
   const start = new Date(value.period_start_date);
@@ -54,6 +54,35 @@ const cycleLogsSchema = Joi.object({
     .description('Array of cycle log objects. One object per menstrual cycle. Minimum 1 required.'),
   rppg_ovulation_day: Joi.number().integer().min(1).max(35).allow(null).default(null)
     .description('Optional: ovulation day detected by rPPG or wearable sensor (day of cycle). If null, server estimates as cycle_length - 14.'),
+});
+
+const dailyLogSchema = Joi.object({
+  phq4_item1: Joi.number().integer().min(0).max(3).required()
+    .description('GAD-2 Q1: Feeling nervous/anxious/on edge. 0=Not at all, 1=Several days, 2=More than half days, 3=Nearly every day'),
+  phq4_item2: Joi.number().integer().min(0).max(3).required()
+    .description('GAD-2 Q2: Unable to stop/control worrying. 0-3 same scale'),
+  phq4_item3: Joi.number().integer().min(0).max(3).required()
+    .description('PHQ-2 Q3: Little interest or pleasure in doing things. 0-3'),
+  phq4_item4: Joi.number().integer().min(0).max(3).required()
+    .description('PHQ-2 Q4: Feeling down, depressed, or hopeless. 0-3'),
+  affect_valence: Joi.number().integer().min(1).max(3).required()
+    .description('How positive do you feel? 1=Very negative, 2=Neutral, 3=Very positive'),
+  affect_arousal: Joi.number().integer().min(1).max(3).required()
+    .description('How energised do you feel? 1=Calm/sleepy, 2=Neutral, 3=Excited/alert'),
+  focus_score: Joi.number().integer().min(1).max(10).required()
+    .description('Focus Score 1-10: How well were you able to concentrate? 1=Very scattered, 10=Laser-focused'),
+  memory_score: Joi.number().integer().min(1).max(10).required()
+    .description('Memory Score 1-10: How well were you able to remember things? 1=Very forgetful, 10=Sharp recall'),
+  mental_fatigue: Joi.number().integer().min(1).max(10).required()
+    .description('Mental Fatigue 1-10: How mentally drained do you feel? 1=Completely drained, 10=Mentally fresh'),
+  sleep_quality: Joi.number().integer().min(1).max(10).required()
+    .description('Sleep Quality 1-10: How restful was your sleep? 1=Very poor, 10=Excellent'),
+  hours_slept: Joi.number().min(0).max(12).required()
+    .description('Hours Slept: How many hours did you sleep? 0-12'),
+  cycle_phase: Joi.string()
+    .valid('Menstrual', 'Follicular', 'Ovulatory', 'Luteal')
+    .allow(null).default(null)
+    .description('Current cycle phase — provided by the cycle tracking module. Enables phase-specific PMDD analysis.'),
 });
 
 function validate(schema) {
@@ -87,5 +116,6 @@ module.exports = {
   aggregatedSchema,
   cycleEntrySchema,
   cycleLogsSchema,
+  dailyLogSchema,
   validate
 };

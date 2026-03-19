@@ -4,24 +4,36 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'AI-MSHM Menstrual Cycle Risk Prediction API',
+      title: 'AI-MSHM Health Prediction API',
       version: '1.0.0',
       description: `
 ## Overview
-Predicts disease risk scores for 6 conditions based on a user's menstrual cycle history.
+Unified API for predicting health risks based on menstrual cycle and mood/cognitive data.
 
-## Diseases Predicted
-| Disease | Flag Threshold | Severity Scale |
+## Menstrual Cycle Endpoints
+| Group | Diseases | Endpoint |
 |---|---|---|
-| Infertility | ≥ 0.50 | Minimal / Mild / Moderate / Severe / Extreme |
-| Dysmenorrhea | ≥ 0.50 | ← same |
-| PMDD | ≥ 0.60 | ← same |
-| Endometrial Cancer | ≥ 0.50 | ← same |
-| Type 2 Diabetes | ≥ 0.50 | ← same |
-| Cardiovascular Disease | ≥ 0.50 | ← same |
+| Cycle | Log cycle | POST /api/v1/menstrual/log-cycle |
+| Cycle | Get history | GET /api/v1/menstrual/history |
+| Prediction | All 6 diseases | POST /api/v1/menstrual/predict |
+
+## Mood & Cognitive Endpoints
+| Group | Screen | Endpoint |
+|---|---|---|
+| Mood | PHQ-4 (Mental Wellness) | POST /api/v1/mood/log/phq4 |
+| Mood | Affect Grid (Mood Check) | POST /api/v1/mood/log/affect |
+| Mood | Focus & Memory | POST /api/v1/mood/log/focus |
+| Mood | Sleep Quality | POST /api/v1/mood/log/sleep |
+| Mood | All 4 screens at once | POST /api/v1/mood/log/complete |
+| Mood | Log history | GET /api/v1/mood/history |
+| Mood | Mental Health predictions | POST /api/v1/mood/predict/mental-health |
+| Mood | Metabolic predictions | POST /api/v1/mood/predict/metabolic |
+| Mood | Cardio/Neuro predictions | POST /api/v1/mood/predict/cardio-neuro |
+| Mood | Reproductive predictions | POST /api/v1/mood/predict/reproductive |
+| Mood | Prediction history | GET /api/v1/mood/predictions |
 
 ## Authentication
-All prediction endpoints require \`Authorization: Bearer <token>\`.
+All endpoints require \`Authorization: Bearer <token>\`.
 Use \`POST /api/v1/auth/token\` to get a test token in development.
       `,
       contact: { name: 'AI-MSHM Platform' },
@@ -38,68 +50,65 @@ Use \`POST /api/v1/auth/token\` to get a test token in development.
         },
       },
       schemas: {
-        PredictionResponse: {
+        PHQ4Log: {
           type: 'object',
+          required: ['phq4_item1', 'phq4_item2', 'phq4_item3', 'phq4_item4'],
           properties: {
-            success: { type: 'boolean' },
-            status: { type: 'integer' },
-            message: { type: 'string' },
-            data: {
-              type: 'object',
-              properties: {
-                predictions: {
-                  type: 'object',
-                  additionalProperties: {
-                    type: 'object',
-                    properties: {
-                      risk_probability: { type: 'number' },
-                      risk_score: { type: 'number' },
-                      risk_flag: { type: 'integer' },
-                      severity: { type: 'string', enum: ['Minimal', 'Mild', 'Moderate', 'Severe', 'Extreme'] },
-                      threshold_used: { type: 'number' }
-                    }
-                  }
-                },
-                features_used: { type: 'array', items: { type: 'string' } },
-                model_module: { type: 'string' }
-              }
-            },
-            meta: {
-              type: 'object',
-              properties: {
-                request_id: { type: 'string' },
-                timestamp: { type: 'string' },
-                version: { type: 'string' }
-              }
-            }
-          }
+            phq4_item1: { type: 'integer', minimum: 0, maximum: 3, description: 'GAD-2 Q1: Feeling nervous/anxious/on edge (0=Not at all, 3=Nearly every day)' },
+            phq4_item2: { type: 'integer', minimum: 0, maximum: 3, description: 'GAD-2 Q2: Unable to stop/control worrying' },
+            phq4_item3: { type: 'integer', minimum: 0, maximum: 3, description: 'PHQ-2 Q3: Little interest or pleasure in doing things' },
+            phq4_item4: { type: 'integer', minimum: 0, maximum: 3, description: 'PHQ-2 Q4: Feeling down, depressed, or hopeless' },
+            log_date: { type: 'string', format: 'date', description: 'ISO date string (YYYY-MM-DD). Defaults to today if omitted.' },
+          },
         },
-        ErrorResponse: {
+        AffectLog: {
           type: 'object',
+          required: ['affect_valence', 'affect_arousal'],
           properties: {
-            success: { type: 'boolean', example: false },
-            status: { type: 'integer' },
-            message: { type: 'string' },
-            errors: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  field: { type: 'string' },
-                  message: { type: 'string' }
-                }
-              }
-            },
-            meta: {
-              type: 'object',
-              properties: {
-                request_id: { type: 'string' },
-                timestamp: { type: 'string' }
-              }
-            }
-          }
-        }
-      }
+            affect_valence: { type: 'integer', minimum: 1, maximum: 3, description: 'How positive do you feel? 1=Very negative, 2=Neutral, 3=Very positive' },
+            affect_arousal: { type: 'integer', minimum: 1, maximum: 3, description: 'How energised do you feel? 1=Calm/sleepy, 2=Neutral, 3=Excited/alert' },
+            log_date: { type: 'string', format: 'date', description: 'ISO date string (YYYY-MM-DD). Defaults to today if omitted.' },
+          },
+        },
+        FocusLog: {
+          type: 'object',
+          required: ['focus_score', 'memory_score', 'mental_fatigue'],
+          properties: {
+            focus_score: { type: 'integer', minimum: 1, maximum: 10, description: 'How well were you able to concentrate? 1=Very scattered, 10=Laser-focused' },
+            memory_score: { type: 'integer', minimum: 1, maximum: 10, description: 'How well were you able to remember things? 1=Very forgetful, 10=Sharp recall' },
+            mental_fatigue: { type: 'integer', minimum: 1, maximum: 10, description: 'How mentally drained do you feel? 1=Completely drained, 10=Mentally fresh' },
+            log_date: { type: 'string', format: 'date', description: 'ISO date string (YYYY-MM-DD). Defaults to today if omitted.' },
+          },
+        },
+        SleepLog: {
+          type: 'object',
+          required: ['sleep_quality', 'hours_slept'],
+          properties: {
+            sleep_quality: { type: 'integer', minimum: 1, maximum: 10, description: 'How restful was your sleep? 1=Very poor, 10=Excellent' },
+            hours_slept: { type: 'number', minimum: 0, maximum: 12, description: 'Total hours slept (0–12)' },
+            log_date: { type: 'string', format: 'date', description: 'ISO date string (YYYY-MM-DD). Defaults to today if omitted.' },
+          },
+        },
+        CompleteMoodLog: {
+          type: 'object',
+          required: ['phq4_item1', 'phq4_item2', 'phq4_item3', 'phq4_item4', 'affect_valence', 'affect_arousal', 'focus_score', 'memory_score', 'mental_fatigue', 'sleep_quality', 'hours_slept'],
+          properties: {
+            phq4_item1: { type: 'integer', minimum: 0, maximum: 3, description: 'GAD-2 Q1: Feeling nervous/anxious/on edge' },
+            phq4_item2: { type: 'integer', minimum: 0, maximum: 3, description: 'GAD-2 Q2: Unable to stop/control worrying' },
+            phq4_item3: { type: 'integer', minimum: 0, maximum: 3, description: 'PHQ-2 Q3: Little interest or pleasure in doing things' },
+            phq4_item4: { type: 'integer', minimum: 0, maximum: 3, description: 'PHQ-2 Q4: Feeling down, depressed, or hopeless' },
+            affect_valence: { type: 'integer', minimum: 1, maximum: 3, description: 'How positive do you feel? 1=Very negative, 2=Neutral, 3=Very positive' },
+            affect_arousal: { type: 'integer', minimum: 1, maximum: 3, description: 'How energised do you feel? 1=Calm/sleepy, 2=Neutral, 3=Excited/alert' },
+            focus_score: { type: 'integer', minimum: 1, maximum: 10, description: 'Concentration rating (1=Very scattered, 10=Laser-focused)' },
+            memory_score: { type: 'integer', minimum: 1, maximum: 10, description: 'Memory rating (1=Very forgetful, 10=Sharp recall)' },
+            mental_fatigue: { type: 'integer', minimum: 1, maximum: 10, description: 'Mental fatigue rating (1=Completely drained, 10=Mentally fresh)' },
+            sleep_quality: { type: 'integer', minimum: 1, maximum: 10, description: 'Sleep quality (1=Very poor, 10=Excellent)' },
+            hours_slept: { type: 'number', minimum: 0, maximum: 12, description: 'Total hours slept (0–12)' },
+            cycle_phase: { type: 'string', enum: ['Menstrual', 'Follicular', 'Ovulatory', 'Luteal'], nullable: true, description: 'Current cycle phase — enables phase-specific PMDD analysis' },
+            log_date: { type: 'string', format: 'date', description: 'ISO date string (YYYY-MM-DD). Defaults to today if omitted.' },
+          },
+        },
+      },
     },
     security: [{ BearerAuth: [] }],
   },

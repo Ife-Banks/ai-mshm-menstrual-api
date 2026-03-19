@@ -5,6 +5,10 @@ const DATASET_MEAN_CYCLE_LEN = 29.3;
 const DATASET_MEAN_LUTEAL = 13.27;
 const DEFAULT_FERTILITY_DAYS = 8.0;
 
+const OLIGOMENORRHEA_THRESHOLD = 35;
+const AMENORRHEA_ANNUAL_CYCLE_FREQ = 8;
+const IRREGULAR_CYCLE_CLV_THRESHOLD = 7;
+
 function scaleFeatures(rawValues, mean, scale) {
   return rawValues.map((v, i) => (v - mean[i]) / scale[i]);
 }
@@ -176,15 +180,17 @@ const risk_probability = probData.length >= 2
 async function predictFromLogs(cycles, rppgOvulationDay = null) {
   const { derived_features, warnings } = deriveAndAggregate(cycles, rppgOvulationDay);
   const predictionResult = await predict(derived_features);
-  
+  const criterionFlags = computeCriterionFlags(derived_features, cycles);
+
   return {
     ...predictionResult,
     derived_features,
-    warnings
+    warnings,
+    ...criterionFlags,
   };
 }
 
-async function savePredictionResult(userId, features, predictions, source) {
+async function savePredictionResult(userId, features, predictions, source, criterionFlags = null) {
   const prisma = require('../db/prisma');
   const p = predictions;
 
@@ -235,8 +241,63 @@ async function savePredictionResult(userId, features, predictions, source) {
 
       nCyclesUsed:      features.n_cycles,
       predictionSource: source,
+
+      criterion1Positive:        criterionFlags?.criterion_1_positive ?? 0,
+      oligomenorrheaTriggered:   criterionFlags?.criteria?.[0]?.triggered ? 1 : 0,
+      amenorrheaRiskTriggered:   criterionFlags?.criteria?.[1]?.triggered ? 1 : 0,
+      irregularPatternTriggered: criterionFlags?.criteria?.[2]?.triggered ? 1 : 0,
     },
   });
 }
 
-module.exports = { predict, predictFromLogs, deriveAndAggregate, savePredictionResult };
+function computeCriterionFlags(derivedFeatures, cycles) {
+  const { CLV, mean_cycle_len } = derivedFeatures;
+
+  const firstStart = new Date(cycles[0].period_start_date);
+  const lastStart  = new Date(cycles[cycles.length - 1].period_start_date);
+  const totalDays  = Math.max(1, Math.round((lastStart - firstStart) / 86400000) + 1);
+  const annualCycleFreq = (cycles.length / totalDays) * 365;
+
+  const oligomenorrhea = mean_cycle_len > OLIGOMENORRHEA_THRESHOLD;
+  const amenorrheaRisk = annualCycleFreq < AMENORRHEA_ANNUAL_CYCLE_FREQ;
+  const irregularPattern = CLV > IRREGULAR_CYCLE_CLV_THRESHOLD;
+
+  const criteria = [
+    {
+      criterion: 1,
+      condition: 'oligomenorrhea',
+      description: 'Mean cycle length > 35 days',
+      triggered: oligomenorrhea,
+      value: parseFloat(mean_cycle_len.toFixed(4)),
+      threshold: OLIGOMENORRHEA_THRESHOLD,
+    },
+    {
+      criterion: 2,
+      condition: 'amenorrhea_risk',
+      description: 'Annual cycle frequency < 8',
+      triggered: amenorrheaRisk,
+      value: parseFloat(annualCycleFreq.toFixed(4)),
+      threshold: AMENORRHEA_ANNUAL_CYCLE_FREQ,
+    },
+    {
+      criterion: 3,
+      condition: 'irregular_cycle_pattern',
+      description: 'CLV standard deviation > 7 days',
+      triggered: irregularPattern,
+      value: parseFloat(CLV.toFixed(4)),
+      threshold: IRREGULAR_CYCLE_CLV_THRESHOLD,
+    },
+  ];
+
+  const anyTriggered = criteria.some(c => c.triggered);
+
+  return {
+    criterion_1_positive: anyTriggered ? 1 : 0,
+    criteria,
+    summary: anyTriggered
+      ? `Criterion 1 positive: ${criteria.filter(c => c.triggered).map(c => c.condition).join(', ')}`
+      : 'No menstrual irregularity flags detected',
+  };
+}
+
+module.exports = { predict, predictFromLogs, deriveAndAggregate, savePredictionResult, computeCriterionFlags };

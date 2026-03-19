@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { predict, predictFromLogs, savePredictionResult } = require('../services/predictionService');
+const { predict, predictFromLogs, savePredictionResult, computeCriterionFlags, deriveAndAggregate } = require('../services/predictionService');
 const { saveCycleLog, getUserCycles, aggregateFromStoredCycles } = require('../services/cycleLogService');
 const { aggregatedSchema, cycleLogsSchema, cycleEntrySchema, validate } = require('../middleware/validate');
 const auth = require('../middleware/auth');
@@ -69,6 +69,7 @@ router.post('/log-cycle', auth, resolveUser, validate(cycleEntrySchema), async (
 
     const allCycles   = await getUserCycles(req.dbUser.id);
     const aggregated  = aggregateFromStoredCycles(allCycles);
+    const criterionFlags = computeCriterionFlags(aggregated, allCycles);
 
     return res.status(201).json({
       success: true,
@@ -78,6 +79,11 @@ router.post('/log-cycle', auth, resolveUser, validate(cycleEntrySchema), async (
         cycle: saved,
         updated_aggregates: aggregated,
         total_cycles_stored: allCycles.length,
+        criterion_flags: {
+          criterion_1_positive: criterionFlags.criterion_1_positive,
+          criteria: criterionFlags.criteria,
+          summary: criterionFlags.summary,
+        },
       },
       meta: {
         request_id: req.requestId,
@@ -133,12 +139,14 @@ router.post('/predict', auth, resolveUser, async (req, res, next) => {
 
     const features = aggregateFromStoredCycles(allCycles);
     const result = await predict(features);
+    const criterionFlags = computeCriterionFlags(features, allCycles);
 
     await savePredictionResult(
       req.dbUser.id,
       features,
       result.predictions,
-      'from-db'
+      'from-db',
+      criterionFlags
     );
 
     return res.status(200).json({
@@ -150,6 +158,11 @@ router.post('/predict', auth, resolveUser, async (req, res, next) => {
         derived_features: features,
         cycles_used: allCycles.length,
         model_module: result.model_module,
+        criterion_flags: {
+          criterion_1_positive: criterionFlags.criterion_1_positive,
+          criteria: criterionFlags.criteria,
+          summary: criterionFlags.summary,
+        },
       },
       meta: {
         request_id: req.requestId,
@@ -249,9 +262,9 @@ router.post('/predict/from-logs', auth, validate(cycleLogsSchema), async (req, r
   try {
     const { cycles, rppg_ovulation_day } = req.body;
     const result = await predictFromLogs(cycles, rppg_ovulation_day);
-    
-    const { predictions, features_used, model_module, derived_features, warnings } = result;
-    
+
+    const { predictions, features_used, model_module, derived_features, warnings, criterion_1_positive, criteria, summary } = result;
+
     res.json({
       success: true,
       status: 200,
@@ -261,7 +274,12 @@ router.post('/predict/from-logs', auth, validate(cycleLogsSchema), async (req, r
         derived_features,
         features_used,
         model_module,
-        warnings
+        warnings,
+        criterion_flags: {
+          criterion_1_positive,
+          criteria,
+          summary,
+        },
       },
       meta: {
         request_id: req.requestId,
@@ -292,6 +310,8 @@ router.post('/predict/from-logs', auth, validate(cycleLogsSchema), async (req, r
 router.get('/history', auth, resolveUser, async (req, res, next) => {
   try {
     const cycles = await getUserCycles(req.dbUser.id);
+    const aggregated = cycles.length > 0 ? aggregateFromStoredCycles(cycles) : null;
+    const criterionFlags = cycles.length > 0 ? computeCriterionFlags(aggregated, cycles) : null;
     return res.status(200).json({
       success: true,
       status: 200,
@@ -299,8 +319,9 @@ router.get('/history', auth, resolveUser, async (req, res, next) => {
       data: {
         cycles,
         total: cycles.length,
-        aggregates: cycles.length > 0
-          ? aggregateFromStoredCycles(cycles)
+        aggregates: aggregated,
+        criterion_flags: criterionFlags
+          ? { criterion_1_positive: criterionFlags.criterion_1_positive, criteria: criterionFlags.criteria, summary: criterionFlags.summary }
           : null,
       },
       meta: {

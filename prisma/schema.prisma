@@ -15,6 +15,8 @@ model User {
 
   cycles      CycleLog[]
   predictions PredictionResult[]
+  moodLogs    MoodDailyLog[]
+  moodPredictions MoodPredictionResult[]
 }
 
 model CycleLog {
@@ -27,7 +29,6 @@ model CycleLog {
   bleedingScores   Int[]
   hasOvulationPeak Boolean
   unusualBleeding  Boolean
-
   rppgOvulationDay Int?
 
   cycleLength      Int?
@@ -90,5 +91,102 @@ model PredictionResult {
 
   nCyclesUsed      Int
   predictionSource String
-  predictedAt      DateTime @default(now())
+
+  criterion1Positive       Int @default(0)
+  oligomenorrheaTriggered  Int @default(0)
+  amenorrheaRiskTriggered  Int @default(0)
+  irregularPatternTriggered Int @default(0)
+
+  predictedAt DateTime @default(now())
+}
+
+model MoodDailyLog {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  logDate DateTime @unique
+
+  phq4Item1 Int?
+  phq4Item2 Int?
+  phq4Item3 Int?
+  phq4Item4 Int?
+  phq4AnxietyScore    Int?
+  phq4DepressionScore Int?
+  phq4Total           Int?
+  phq4AnxietyFlag     Int?
+  phq4DepressionFlag  Int?
+
+  affectValence Int?
+  affectArousal Int?
+  affectQuadrant String?
+
+  focusScore    Int?
+  memoryScore   Int?
+  mentalFatigue Int?
+  cognitiveLoadScore Float?
+
+  sleepQuality Float?
+  hoursSlept   Float?
+  sleepSatisfaction Float?
+
+  psychBurdenScore Float?
+
+  cyclePhase String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MoodPredictionResult {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  group       String
+  predictedAt DateTime @default(now())
+  nLogsUsed   Int
+
+  anxietyRiskScore  Float?
+  anxietyRiskProb   Float?
+  anxietyRiskFlag   Int?
+  anxietySeverity   String?
+
+  depressionRiskScore  Float?
+  depressionRiskProb   Float?
+  depressionRiskFlag   Int?
+  depressionSeverity   String?
+
+  pmddRiskScore  Float?
+  pmddRiskProb   Float?
+  pmddRiskFlag   Int?
+  pmddSeverity   String?
+
+  stressRiskScore  Float?
+  stressRiskProb   Float?
+  stressRiskFlag   Int?
+  stressSeverity   String?
+
+  cvdRiskScore  Float?
+  cvdRiskProb   Float?
+  cvdRiskFlag   Int?
+  cvdSeverity   String?
+
+  t2dRiskScore  Float?
+  t2dRiskProb   Float?
+  t2dRiskFlag   Int?
+  t2dSeverity   String?
+
+  infertilityRiskScore  Float?
+  infertilityRiskProb   Float?
+  infertilityRiskFlag   Int?
+  infertilitySeverity   String?
+
+  strokeRiskScore  Float?
+  strokeRiskProb   Float?
+  strokeRiskFlag   Int?
+  strokeSeverity   String?
+
+  metsynRiskScore  Float?
+  metsynRiskProb   Float?
+  metsynRiskFlag   Int?
+  metsynSeverity   String?
 }

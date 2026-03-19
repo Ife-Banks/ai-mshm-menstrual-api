@@ -1,12 +1,12 @@
-# AI-MSHM Menstrual Cycle Risk Prediction API
+# AI-MSHM Health Prediction API
 
-Production-ready Node.js + Express REST API for predicting menstrual cycle disease risks using ONNX runtime and PostgreSQL for persistent storage.
+Unified Node.js + Express REST API for predicting health risks based on menstrual cycle and mood/cognitive data using ONNX runtime and PostgreSQL.
 
 ## Prerequisites
 
 - **Node.js** 18+
 - **Python** 3.9+ (for one-time ONNX conversion only)
-- **PostgreSQL** 13+ (for data storage)
+- **PostgreSQL** 13+
 
 ## Setup
 
@@ -15,19 +15,21 @@ Production-ready Node.js + Express REST API for predicting menstrual cycle disea
 npm install
 
 # Set up PostgreSQL database
-createdb mshm_menstrual_db
-psql mshm_menstrual_db -c "CREATE USER mshm_user WITH PASSWORD 'your_password';"
-psql mshm_menstrual_db -c "GRANT ALL PRIVILEGES ON DATABASE mshm_menstrual_db TO mshm_user;"
+createdb mshm_db
+psql mshm_db -c "CREATE USER mshm_user WITH PASSWORD 'your_password';"
+psql mshm_db -c "GRANT ALL PRIVILEGES ON DATABASE mshm_db TO mshm_user;"
 
 # Run Prisma migrations
 npx prisma migrate dev --name init
 npx prisma generate
 
-# Place the pkl bundle at project root
+# Place the pkl bundles at project root
 cp /path/to/ai_mshm_menstrual_pipeline.pkl ./
+cp /path/to/mood_cognitive_all_models.pkl ./
 
-# Run the Python ONNX conversion (one-time)
-npm run convert
+# Run the Python ONNX conversions (one-time)
+npm run convert          # Menstrual models
+npm run convert:mood     # Mood models
 
 # Copy and configure environment variables
 cp .env.example .env
@@ -43,7 +45,7 @@ npm run dev
 
 ## Authentication
 
-All prediction endpoints require `Authorization: Bearer <token>`.
+All endpoints require `Authorization: Bearer <token>`.
 
 ### Get Test Token (Development Only)
 
@@ -55,41 +57,37 @@ curl -X POST http://localhost:3000/api/v1/auth/token \
 
 ## API Endpoints
 
+### Menstrual Cycle
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/menstrual/log-cycle` | Log one cycle → saved to DB |
-| POST | `/api/v1/menstrual/predict` | Predict using stored cycles → saves result |
-| POST | `/api/v1/menstrual/predict/from-logs` | Batch submit + predict (stateless) |
-| GET | `/api/v1/menstrual/history` | All stored cycles for this user |
-| GET | `/api/v1/menstrual/predictions` | All stored prediction results |
-| GET | `/api/v1/menstrual/features` | Feature schema reference |
+| POST | `/api/v1/menstrual/log-cycle` | Log one menstrual cycle |
+| POST | `/api/v1/menstrual/predict` | Predict using stored cycles |
+| POST | `/api/v1/menstrual/predict/from-logs` | Batch submit + predict |
+| GET | `/api/v1/menstrual/history` | Get cycle history |
+| GET | `/api/v1/menstrual/predictions` | Get prediction history |
+| GET | `/api/v1/menstrual/features` | Feature schema |
 | GET | `/api/v1/menstrual/model-info` | Model metadata |
-| GET | `/api/v1/health` | Liveness probe |
 
-## Mobile App Integration Flow
+### Mood & Cognitive
 
-```
-1. User opens app → logs period start date (date picker)
-2. During period → user logs daily bleeding intensity (1–4)
-3. Period ends → user marks period end date
-   → App calls POST /api/v1/menstrual/log-cycle
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/mood/log` | Log daily mood/cognitive entry |
+| POST | `/api/v1/mood/predict/mental-health` | Anxiety, Depression, PMDD, ChronicStress |
+| POST | `/api/v1/mood/predict/metabolic` | T2D_Mood, MetSyn_Mood |
+| POST | `/api/v1/mood/predict/cardio-neuro` | CVD_Mood, Stroke_Mood |
+| POST | `/api/v1/mood/predict/reproductive` | Infertility_Mood |
+| GET | `/api/v1/mood/history` | Get mood log history |
+| GET | `/api/v1/mood/predictions` | Get prediction history |
 
-4. After ≥ 1 cycle → app can call POST /api/v1/menstrual/predict
-   → Server fetches ALL stored cycles for this user
-   → Aggregates into 10 model features
-   → Runs ONNX inference
-   → Saves prediction result
-   → Returns risk scores for 6 diseases
+### Health
 
-5. App can call GET /api/v1/menstrual/history to show cycle history
-6. App can call GET /api/v1/menstrual/predictions to show risk trend over time
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/health` | Health check |
 
-NOTE: CLV (Cycle Length Variability) only becomes meaningful at ≥ 3 cycles.
-      The API still works with 1 cycle — CLV defaults to 0.
-      Accuracy improves with each additional cycle logged.
-```
-
-### User-Logged Input Schema (log-cycle endpoint)
+## Menstrual Cycle Input
 
 ```json
 {
@@ -102,56 +100,60 @@ NOTE: CLV (Cycle Length Variability) only becomes meaningful at ≥ 3 cycles.
 }
 ```
 
-| Field | Source | Description |
-|-------|--------|-------------|
-| `period_start_date` | User (date picker) | Period start date in ISO format |
-| `period_end_date` | User (date picker) | Period end date in ISO format |
-| `bleeding_scores` | User (daily selection) | Array of daily bleeding intensity: 1=Spotting, 2=Light, 3=Medium, 4=Heavy |
-| `has_ovulation_peak` | User (BBT/rPPG) | Boolean: did the cycle show an ovulation peak? |
-| `unusual_bleeding` | User (flagged) | Boolean: any bleeding outside the period? |
-| `rppg_ovulation_day` | Wearable/camera (optional) | rPPG-detected ovulation day override |
-
-## Feature Descriptions (Internal Model Features)
-
-| Feature | Type | Range | Description |
-|---------|------|-------|-------------|
-| CLV | number | 0 to ∞ | Cycle Length Variability — std dev of cycle lengths (days). Use 0 if < 3 cycles logged. |
-| mean_cycle_len | number | 10 to 90 | Mean cycle length in days across all logged cycles. |
-| mean_luteal | number | 0 to 30 | Mean luteal phase length in days. Use 14 if unknown. |
-| luteal_std | number | 0 to ∞ | Std dev of luteal phase length. Use 0 if < 3 cycles. |
-| anovulatory_rate | number | 0 to 1 | Fraction of cycles with no detected ovulation peak (0–1). 0 = always ovulated. |
-| mean_menses_len | number | 0 to 14 | Mean menstrual bleeding length in days. |
-| mean_menses_score | number | 0 to 24 | Mean total menses score — cumulative daily bleeding score (Spotting=1, Light=2, Medium=3, Heavy=4) summed per period. |
-| unusual_bleed_rate | number | 0 to 1 | Fraction of cycles with unusual/intermenstrual bleeding flagged (0–1). |
-| mean_fertility_days | number | 0 to 30 | Mean number of fertile window days per cycle. |
-| n_cycles | integer | 1 to ∞ | Total number of cycles logged by this client. |
-
-## Disease Output Schema
-
-Each disease prediction returns:
+## Mood Input (Daily Check-in)
 
 ```json
 {
-  "risk_probability": 0.1823,
-  "risk_score": 0.1677,
-  "risk_flag": 0,
-  "severity": "Minimal",
-  "threshold_used": 0.5
+  "phq4_item1": 1,
+  "phq4_item2": 1,
+  "phq4_item3": 0,
+  "phq4_item4": 0,
+  "affect_valence": 2,
+  "affect_arousal": 2,
+  "focus_score": 5,
+  "memory_score": 5,
+  "mental_fatigue": 5,
+  "sleep_quality": 7,
+  "hours_slept": 7.5,
+  "cycle_phase": "Follicular"
 }
 ```
 
-### Flag Thresholds
+### Mood Screens to Fields
 
+| Screen | Fields | Scale |
+|--------|--------|-------|
+| Mental Wellness (PHQ-4) | phq4_item1-4 | 0-3 |
+| Mood Check (Affect Grid) | affect_valence, affect_arousal | 1-3 |
+| Focus & Memory | focus_score, memory_score, mental_fatigue | 1-10 |
+| Sleep Quality | sleep_quality, hours_slept | 1-10, 0-12h |
+
+## Disease Thresholds
+
+### Menstrual (6 diseases)
 | Disease | Threshold |
 |---------|-----------|
 | Infertility | ≥ 0.50 |
 | Dysmenorrhea | ≥ 0.50 |
 | PMDD | ≥ 0.60 |
 | Endometrial Cancer | ≥ 0.50 |
-| Type 2 Diabetes (T2D) | ≥ 0.50 |
-| Cardiovascular Disease (CVD) | ≥ 0.50 |
+| Type 2 Diabetes | ≥ 0.50 |
+| Cardiovascular Disease | ≥ 0.50 |
 
-### Severity Levels
+### Mood (9 diseases)
+| Disease | Threshold | Group |
+|---------|-----------|-------|
+| Anxiety | ≥ 0.30 | Mental Health |
+| Depression | ≥ 0.30 | Mental Health |
+| PMDD | ≥ 0.25 | Mental Health |
+| ChronicStress | ≥ 0.35 | Mental Health |
+| T2D_Mood | ≥ 0.40 | Metabolic |
+| MetSyn_Mood | ≥ 0.40 | Metabolic |
+| CVD_Mood | ≥ 0.40 | Cardio/Neuro |
+| Stroke_Mood | ≥ 0.40 | Cardio/Neuro |
+| Infertility_Mood | ≥ 0.35 | Reproductive |
+
+## Severity Scale
 
 | Score Range | Severity |
 |-------------|----------|
@@ -163,27 +165,29 @@ Each disease prediction returns:
 
 ## Database Schema
 
-The API uses PostgreSQL with Prisma ORM. Tables:
+PostgreSQL with Prisma ORM:
 
-- **User** — Maps JWT `sub` claim to local user ID
-- **CycleLog** — Individual cycle records with computed features
-- **PredictionResult** — Prediction history for audit and trends
+- **User** — JWT sub → local user ID
+- **CycleLog** — Menstrual cycle records
+- **PredictionResult** — Menstrual prediction history
+- **MoodCognitiveLog** — Daily mood/cognitive entries
+- **MoodPredictionResult** — Mood prediction history
 
 ## Deployment Notes
 
-- The `models/onnx/` directory must be present at runtime with all ONNX model files
-- Run `npm run convert` before deployment to generate ONNX models from the pkl bundle
-- Run `npx prisma migrate deploy` in production to apply schema migrations
-- Ensure `JWT_SECRET` and `DATABASE_URL` are set correctly in production
-- The `/api/v1/auth/token` endpoint is disabled in production
+- `models/onnx/` — menstrual ONNX models
+- `models/onnx/mood/` — mood ONNX models
+- Run `npm run convert` and `npm run convert:mood` before deployment
+- Run `npx prisma migrate deploy` in production
+- Ensure `JWT_SECRET` and `DATABASE_URL` are set in production
 
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm start` | Start production server |
-| `npm run dev` | Start development server with nodemon |
-| `npm run convert` | Run Python ONNX conversion script |
-| `npx prisma migrate dev` | Create/apply database migrations |
+| `npm start` | Production server |
+| `npm run dev` | Development server |
+| `npm run convert` | Convert menstrual pkl → ONNX |
+| `npm run convert:mood` | Convert mood pkl → ONNX |
+| `npx prisma migrate dev` | Apply migrations |
 | `npx prisma generate` | Generate Prisma Client |
-# ai-mshm-menstrual-api
