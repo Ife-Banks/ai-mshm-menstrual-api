@@ -9,6 +9,7 @@ const options = {
       description: `
 ## Overview
 Unified API for predicting health risks based on menstrual cycle and mood/cognitive data.
+This API is called exclusively by the Django backend (\`https://ai-mshm-backend.onrender.com\`) on behalf of patients. It is not called directly by the mobile or web frontend.
 
 ## Menstrual Cycle Endpoints
 | Group | Diseases | Endpoint |
@@ -33,13 +34,17 @@ Unified API for predicting health risks based on menstrual cycle and mood/cognit
 | Mood | Prediction history | GET /api/v1/mood/predictions |
 
 ## Authentication
-All endpoints require \`Authorization: Bearer <token>\`.
-Use \`POST /api/v1/auth/token\` to get a test token in development.
+All endpoints (except `/health` and `/auth/token`) require \`Authorization: Bearer <token>\`.
+
+**Token issuance:** The Django backend calls \`POST /api/v1/auth/token\` with \`{ "external_id": "<django_user_uuid>" }\` and caches the 24-hour JWT in Redis. All requests to this Node.js API are forwarded by Django with this token attached as a Bearer token. The Node.js backend extracts the \`external_id\` from the JWT payload and scopes all data operations to that patient.
+
+**Implicit patient creation:** The first data write from any Django user automatically creates a local patient record — no explicit registration call is needed.
       `,
       contact: { name: 'AI-MSHM Platform' },
     },
     servers: [
       { url: 'http://localhost:3000', description: 'Development' },
+      { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production' },
     ],
     components: {
       securitySchemes: {

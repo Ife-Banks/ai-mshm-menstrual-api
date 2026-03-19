@@ -11,7 +11,16 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://ai-mshm-backend.onrender.com',
+    'http://localhost:8000',
+    'http://localhost:3000',
+  ],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],
+  credentials: true,
+}));
 app.use(morgan('combined'));
 app.use(express.json());
 
