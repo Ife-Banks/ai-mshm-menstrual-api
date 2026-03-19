@@ -38,7 +38,16 @@ app.use('/api/', limiter);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
   customSiteTitle: 'AI-MSHM Menstrual API',
   customCss: '.swagger-ui .topbar { background-color: #1D9E75; }',
+  swaggerOptions: {
+    url: '/api-docs/swagger.json',
+    persistAuthorization: true,
+  },
 }));
+
+app.get('/api-docs/swagger.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(specs);
+});
 
 app.get('/api/docs.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');

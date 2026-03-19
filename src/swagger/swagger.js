@@ -45,8 +45,8 @@ const options = {
       contact: { name: 'AI-MSHM Platform' },
     },
     servers: [
-      { url: 'http://localhost:3000', description: 'Development' },
-      { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production' },
+      { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production server' },
+      { url: 'http://localhost:3000', description: 'Local development server' },
     ],
     components: {
       securitySchemes: {
