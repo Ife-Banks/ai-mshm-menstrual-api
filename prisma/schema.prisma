@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  externalId String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cycles      CycleLog[]
+  predictions PredictionResult[]
+}
+
+model CycleLog {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  periodStartDate  DateTime
+  periodEndDate    DateTime
+  bleedingScores   Int[]
+  hasOvulationPeak Boolean
+  unusualBleeding  Boolean
+
+  rppgOvulationDay Int?
+
+  cycleLength      Int?
+  mensesLength     Int
+  totalMensesScore Int
+  lutealLength     Int?
+  fertilityDays    Int?
+  ovulationDay     Int?
+
+  cycleNumber Int
+  loggedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PredictionResult {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  featCLV               Float
+  featMeanCycleLen      Float
+  featMeanLuteal        Float
+  featLutealStd         Float
+  featAnovulatoryRate  Float
+  featMeanMensesLen    Float
+  featMeanMensesScore  Float
+  featUnusualBleedRate Float
+  featMeanFertilityDays Float
+  featNCycles          Int
+
+  infertilityRiskProb  Float
+  infertilityRiskScore Float
+  infertilityRiskFlag  Int
+  infertilitySeverity  String
+
+  dysmenorrheaRiskProb  Float
+  dysmenorrheaRiskScore Float
+  dysmenorrheaRiskFlag  Int
+  dysmenorrheaSeverity  String
+
+  pmddRiskProb  Float
+  pmddRiskScore Float
+  pmddRiskFlag  Int
+  pmddSeverity  String
+
+  endometrialRiskProb  Float
+  endometrialRiskScore Float
+  endometrialRiskFlag  Int
+  endometrialSeverity  String
+
+  t2dRiskProb  Float
+  t2dRiskScore Float
+  t2dRiskFlag  Int
+  t2dSeverity  String
+
+  cvdRiskProb  Float
+  cvdRiskScore Float
+  cvdRiskFlag  Int
+  cvdSeverity  String
+
+  nCyclesUsed      Int
+  predictionSource String
+  predictedAt      DateTime @default(now())
+}

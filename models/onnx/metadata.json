@@ -1,0 +1,139 @@
+{
+  "feature_names": [
+    "CLV",
+    "mean_cycle_len",
+    "mean_luteal",
+    "luteal_std",
+    "anovulatory_rate",
+    "mean_menses_len",
+    "mean_menses_score",
+    "unusual_bleed_rate",
+    "mean_fertility_days",
+    "n_cycles"
+  ],
+  "diseases": [
+    "Infertility",
+    "Dysmenorrhea",
+    "PMDD",
+    "Endometrial",
+    "T2D",
+    "CVD"
+  ],
+  "flag_thresholds": {
+    "Infertility": 0.5,
+    "Dysmenorrhea": 0.5,
+    "PMDD": 0.6,
+    "Endometrial": 0.5,
+    "T2D": 0.5,
+    "CVD": 0.5
+  },
+  "severity_bins": [
+    -0.001,
+    0.19,
+    0.39,
+    0.59,
+    0.79,
+    1.001
+  ],
+  "severity_labels": [
+    "Minimal",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Extreme"
+  ],
+  "scaler_mean": [
+    2.4851747022782438,
+    29.633840010569607,
+    13.184919767679382,
+    1.545671805472873,
+    0.09892281141458026,
+    5.341693786992323,
+    10.095297577291763,
+    0.06765151124588151,
+    8.173862248893618,
+    10.214723926380367
+  ],
+  "scaler_scale": [
+    1.308233392337331,
+    3.0493848230632326,
+    2.2224234571387775,
+    1.3275171302277187,
+    0.17688467113337264,
+    1.025907356176547,
+    2.4134276261706886,
+    0.1858005380757088,
+    2.614633343666377,
+    7.050860219275292
+  ],
+  "model_metrics": {
+    "Infertility": {
+      "pr_auc": 0.9978,
+      "accuracy_cv": 0.954,
+      "accuracy_full": 0.9877,
+      "rmse_cv": 0.0475,
+      "rmse_full": 0.0058,
+      "positives": 11,
+      "total": 163
+    },
+    "Dysmenorrhea": {
+      "pr_auc": 0.9889,
+      "accuracy_cv": 0.95,
+      "accuracy_full": 0.9755,
+      "rmse_cv": 0.0203,
+      "rmse_full": 0.004,
+      "positives": 33,
+      "total": 163
+    },
+    "PMDD": {
+      "pr_auc": 0.9988,
+      "accuracy_cv": 0.9684,
+      "accuracy_full": 0.9877,
+      "rmse_cv": 0.029,
+      "rmse_full": 0.0054,
+      "positives": 21,
+      "total": 163
+    },
+    "Endometrial": {
+      "pr_auc": 0.9978,
+      "accuracy_cv": 0.9581,
+      "accuracy_full": 0.9877,
+      "rmse_cv": 0.0782,
+      "rmse_full": 0.0047,
+      "positives": 8,
+      "total": 163
+    },
+    "T2D": {
+      "pr_auc": 0.9991,
+      "accuracy_cv": 0.9968,
+      "accuracy_full": 1.0,
+      "rmse_cv": 0.0845,
+      "rmse_full": 0.004,
+      "positives": 8,
+      "total": 163
+    },
+    "CVD": {
+      "pr_auc": 0.6667,
+      "accuracy_cv": 0.9754,
+      "accuracy_full": 1.0,
+      "rmse_cv": 0.0506,
+      "rmse_full": 0.0035,
+      "positives": 5,
+      "total": 163
+    }
+  },
+  "trained_at": "2026-03-17T01:00:14",
+  "module": "Menstrual Cycle Tracking \u2014 Layer 2 Active Input",
+  "feature_index_map": {
+    "f0": "CLV",
+    "f1": "mean_cycle_len",
+    "f2": "mean_luteal",
+    "f3": "luteal_std",
+    "f4": "anovulatory_rate",
+    "f5": "mean_menses_len",
+    "f6": "mean_menses_score",
+    "f7": "unusual_bleed_rate",
+    "f8": "mean_fertility_days",
+    "f9": "n_cycles"
+  }
+}
