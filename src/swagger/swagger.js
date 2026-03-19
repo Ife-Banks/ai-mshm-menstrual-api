@@ -27,9 +27,9 @@ This API is called exclusively by the Django backend (\`https://ai-mshm-backend.
 | Mood | Sleep Quality | POST /api/v1/mood/log/sleep |
 | Mood | All 4 screens at once | POST /api/v1/mood/log/complete |
 | Mood | Log history | GET /api/v1/mood/history |
-| Mood | Mental Health predictions | POST /api/v1/mood/predict/mental-health |
+| Mood | Mental Health predictions | POST /api/v1/mood/predict/mental\u2011health |
 | Mood | Metabolic predictions | POST /api/v1/mood/predict/metabolic |
-| Mood | Cardio/Neuro predictions | POST /api/v1/mood/predict/cardio-neuro |
+| Mood | Cardio/Neuro predictions | POST /api/v1/mood/predict/cardio\u2011neuro |
 | Mood | Reproductive predictions | POST /api/v1/mood/predict/reproductive |
 | Mood | Prediction history | GET /api/v1/mood/predictions |
 
