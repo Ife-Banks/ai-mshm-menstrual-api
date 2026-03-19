@@ -9,6 +9,21 @@ const QUADRANT_SCORE = {
   'Sad-Flat': 6, 'Depressed-Fatigued': 7, 'Anxious-Agitated': 8,
 };
 
+const FEATURE_FALLBACKS = {
+  phq4_anx:           1.5,
+  phq4_dep:           1.5,
+  phq4_tot:           3.0,
+  cog:                3.27,
+  sleep:              3.8,
+  hours_slept:        7.0,
+  affect_valence:     5.0,
+  affect_arousal:     5.0,
+  affect_quadrant_score: 4.0,
+  pbs:                0.0,
+  anx_flag:           0.0,
+  dep_flag:           0.0,
+};
+
 function getSeverity(score, bins, labels) {
   for (let i = 0; i < bins.length - 1; i++) {
     if (score > bins[i] && score <= bins[i + 1]) return labels[i];
@@ -17,6 +32,8 @@ function getSeverity(score, bins, labels) {
 }
 
 const mean = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+
+const orFallback = (val, key) => val ?? FEATURE_FALLBACKS[key] ?? 0;
 
 const std = arr => {
   if (arr.length < 2) return 0;
@@ -51,7 +68,7 @@ async function buildFeatureVector(userId) {
   const meta = getMoodMetadata();
   const medians = meta?.feature_medians || {};
 
-  const orMedian = (val, key) => val ?? medians[key] ?? 0;
+  const orMedian = (val, key) => val ?? medians[key] ?? FEATURE_FALLBACKS[key] ?? 0;
 
   const phq4Anx   = logs.map(r => r.phq4AnxietyScore);
   const phq4Dep   = logs.map(r => r.phq4DepressionScore);
@@ -65,18 +82,18 @@ async function buildFeatureVector(userId) {
   const anxFlag   = logs.map(r => r.phq4AnxietyFlag);
   const depFlag   = logs.map(r => r.phq4DepressionFlag);
 
-  const phq4_anx_28d   = mean(phq4Anx);
-  const phq4_dep_28d   = mean(phq4Dep);
-  const phq4_total_28d = mean(phq4Tot);
-  const cog_28d        = mean(cog);
-  const sleep_28d      = mean(sleep);
-  const val_28d        = mean(val);
-  const aro_28d        = mean(aro);
-  const quad_28d       = mean(quad);
-  const pbs_28d        = mean(pbs);
+  const phq4_anx_28d   = orFallback(mean(phq4Anx),   'phq4_anx');
+  const phq4_dep_28d   = orFallback(mean(phq4Dep),   'phq4_dep');
+  const phq4_total_28d = orFallback(mean(phq4Tot),   'phq4_tot');
+  const cog_28d        = orFallback(mean(cog),        'cog');
+  const sleep_28d      = orFallback(mean(sleep),      'sleep');
+  const val_28d        = orFallback(mean(val),        'affect_valence');
+  const aro_28d        = orFallback(mean(aro),        'affect_arousal');
+  const quad_28d       = orFallback(mean(quad),       'affect_quadrant_score');
+  const pbs_28d        = orFallback(mean(pbs),        'pbs');
 
-  const anx_flag_pct = mean(anxFlag);
-  const dep_flag_pct = mean(depFlag);
+  const anx_flag_pct = orFallback(mean(anxFlag), 'anx_flag');
+  const dep_flag_pct = orFallback(mean(depFlag), 'dep_flag');
 
   const phq4_lut  = orMedian(phaseMean(logs, 'Luteal',    'phq4Total'),           'phq4_lut');
   const phq4_fol  = orMedian(phaseMean(logs, 'Follicular','phq4Total'),           'phq4_fol');

@@ -28,10 +28,10 @@ const schemas = {
       .description('ISO date string (YYYY-MM-DD) for the log date. Defaults to today if omitted.'),
   }),
   affect: Joi.object({
-    affect_valence: Joi.number().integer().min(1).max(3).required()
-      .description('How positive do you feel? 1=Very negative, 2=Neutral, 3=Very positive'),
-    affect_arousal: Joi.number().integer().min(1).max(3).required()
-      .description('How energised do you feel? 1=Calm/sleepy, 2=Neutral, 3=Excited/alert'),
+    affect_valence: Joi.number().integer().min(1).max(10).required()
+      .description('How positive do you feel? 1=Very negative, 10=Very positive'),
+    affect_arousal: Joi.number().integer().min(1).max(10).required()
+      .description('How energised do you feel? 1=Calm/sleepy, 10=Excited/alert'),
     log_date: Joi.string().isoDate().optional()
       .description('ISO date string (YYYY-MM-DD). Defaults to today if omitted.'),
   }),
@@ -58,8 +58,8 @@ const schemas = {
     phq4_item2: Joi.number().integer().min(0).max(3).required(),
     phq4_item3: Joi.number().integer().min(0).max(3).required(),
     phq4_item4: Joi.number().integer().min(0).max(3).required(),
-    affect_valence: Joi.number().integer().min(1).max(3).required(),
-    affect_arousal: Joi.number().integer().min(1).max(3).required(),
+    affect_valence: Joi.number().integer().min(1).max(10).required(),
+    affect_arousal: Joi.number().integer().min(1).max(10).required(),
     focus_score: Joi.number().integer().min(1).max(10).required(),
     memory_score: Joi.number().integer().min(1).max(10).required(),
     mental_fatigue: Joi.number().integer().min(1).max(10).required(),
@@ -208,21 +208,30 @@ router.post('/log/phq4', auth, resolveUser, validate(schemas.phq4), async (req, 
 router.post('/log/affect', auth, resolveUser, validate(schemas.affect), async (req, res, next) => {
   try {
     const entry = await getOrCreateDailyLog(req.dbUser.id, req.body.log_date);
-    const quadrant = {
-      '1-1': 'Depressed-Fatigued', '1-2': 'Sad-Flat', '1-3': 'Anxious-Agitated',
-      '2-1': 'Quiet-Neutral', '2-2': 'Neutral', '2-3': 'Alert-Neutral',
-      '3-1': 'Content', '3-2': 'Calm-Relaxed', '3-3': 'Happy-Energised',
-    }[`${req.body.affect_valence}-${req.body.affect_arousal}`] || 'Neutral';
+    const { affect_valence: val, affect_arousal: aro } = req.body;
+
+    let quadrant;
+    if (val === 5 && aro === 5) {
+      quadrant = 'Neutral';
+    } else if (val >= 6 && aro >= 6) {
+      quadrant = 'Happy-Energised';
+    } else if (val >= 6 && aro <= 5) {
+      quadrant = 'Calm-Relaxed';
+    } else if (val <= 5 && aro >= 6) {
+      quadrant = 'Anxious-Agitated';
+    } else {
+      quadrant = 'Depressed-Fatigued';
+    }
 
     await prisma.moodDailyLog.update({
       where: { id: entry.id },
-      data: { affectValence: req.body.affect_valence, affectArousal: req.body.affect_arousal, affectQuadrant: quadrant },
+      data: { affectValence: val, affectArousal: aro, affectQuadrant: quadrant },
     });
 
     res.json({
       success: true, status: 200,
       message: 'Affect logged successfully',
-      data: { affect_valence: req.body.affect_valence, affect_arousal: req.body.affect_arousal, affect_quadrant: quadrant, log_date: entry.logDate },
+      data: { affect_valence: val, affect_arousal: aro, affect_quadrant: quadrant, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
   } catch (err) { next(err); }
@@ -389,7 +398,18 @@ router.post('/log/complete', auth, resolveUser, validate(schemas.complete), asyn
     const cogDef = (COG_MAX - cognitiveLoadScore) / (COG_MAX - 1);
     const sleepDef = (SLEEP_MAX - sleepSatisfaction) / (SLEEP_MAX - 1);
     const psychBurdenScore = parseFloat(Math.min(10, Math.max(0, (phq4Norm * 0.40 + cogDef * 0.35 + sleepDef * 0.25) * 10)).toFixed(4));
-    const quadrant = { '1-1': 'Depressed-Fatigued', '1-2': 'Sad-Flat', '1-3': 'Anxious-Agitated', '2-1': 'Quiet-Neutral', '2-2': 'Neutral', '2-3': 'Alert-Neutral', '3-1': 'Content', '3-2': 'Calm-Relaxed', '3-3': 'Happy-Energised' }[`${affect_valence}-${affect_arousal}`] || 'Neutral';
+    let quadrant;
+    if (affect_valence === 5 && affect_arousal === 5) {
+      quadrant = 'Neutral';
+    } else if (affect_valence >= 6 && affect_arousal >= 6) {
+      quadrant = 'Happy-Energised';
+    } else if (affect_valence >= 6 && affect_arousal <= 5) {
+      quadrant = 'Calm-Relaxed';
+    } else if (affect_valence <= 5 && affect_arousal >= 6) {
+      quadrant = 'Anxious-Agitated';
+    } else {
+      quadrant = 'Depressed-Fatigued';
+    }
 
     await prisma.moodDailyLog.update({
       where: { id: entry.id },
@@ -409,7 +429,7 @@ router.post('/log/complete', auth, resolveUser, validate(schemas.complete), asyn
     res.json({
       success: true, status: 200,
       message: 'Complete daily log saved',
-      data: { phq4_total: anxiety + depression, cognitive_load_score: cognitiveLoadScore, sleep_satisfaction: sleepSatisfaction, psych_burden_score: psychBurdenScore, log_date: entry.logDate },
+      data: { phq4_total: anxiety + depression, affect_quadrant: quadrant, cognitive_load_score: cognitiveLoadScore, sleep_satisfaction: sleepSatisfaction, psych_burden_score: psychBurdenScore, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
   } catch (err) { next(err); }
