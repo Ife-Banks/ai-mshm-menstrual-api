@@ -54,6 +54,30 @@ app.get('/api/docs.json', (req, res) => {
   res.send(specs);
 });
 
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'AI-MSHM Menstrual ML API',
+    timestamp: new Date().toISOString(),
+    models_loaded: true,
+  });
+});
+
+app.get('/api/v1/health', (req, res) => {
+  const { getSessions } = require('./loaders/modelLoader');
+  const { getMoodSessions } = require('./loaders/moodModelLoader');
+  const menstrualSessions = getSessions();
+  const moodSessions = getMoodSessions();
+  const modelsLoaded = !!(menstrualSessions && Object.keys(menstrualSessions).length > 0);
+
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    models_loaded: modelsLoaded,
+    uptime: parseFloat(process.uptime().toFixed(2)),
+  });
+});
+
 app.use('/api/v1', routes);
 app.use(errorHandler);
 
