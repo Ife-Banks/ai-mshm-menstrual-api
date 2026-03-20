@@ -104,7 +104,9 @@ model MoodDailyLog {
   id     String @id @default(uuid())
   userId String
   user   User   @relation(fields: [userId], references: [id])
-  logDate DateTime @unique
+  logDate DateTime
+
+  @@unique([userId, logDate])
 
   phq4Item1 Int?
   phq4Item2 Int?
