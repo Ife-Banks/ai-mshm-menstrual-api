@@ -14,6 +14,35 @@ const DISEASE_GROUPS = {
   reproductive: ['Infertility_Mood']
 };
 
+async function triggerMoodPredictions(userId) {
+  const logs = await getAllUserLogs(userId);
+  if (logs.length < 3) return;
+
+  try {
+    const featureVector = await buildFeatureVector(userId);
+    await Promise.allSettled([
+      (async () => {
+        const p = await runDiseasePredictions(featureVector, DISEASE_GROUPS.mental_health);
+        await saveMoodPrediction(userId, 'mental_health', p, logs.length);
+      })(),
+      (async () => {
+        const p = await runDiseasePredictions(featureVector, DISEASE_GROUPS.metabolic);
+        await saveMoodPrediction(userId, 'metabolic', p, logs.length);
+      })(),
+      (async () => {
+        const p = await runDiseasePredictions(featureVector, DISEASE_GROUPS.cardio_neuro);
+        await saveMoodPrediction(userId, 'cardio_neuro', p, logs.length);
+      })(),
+      (async () => {
+        const p = await runDiseasePredictions(featureVector, DISEASE_GROUPS.reproductive);
+        await saveMoodPrediction(userId, 'reproductive', p, logs.length);
+      })(),
+    ]);
+  } catch (err) {
+    console.warn('[Mood] Prediction trigger failed:', err.message);
+  }
+}
+
 const schemas = {
   phq4: Joi.object({
     phq4_item1: Joi.number().integer().min(0).max(3).required()
@@ -173,6 +202,7 @@ router.post('/log/phq4', auth, resolveUser, validate(schemas.phq4), async (req, 
       data: { phq4_anxiety_score: anxiety, phq4_depression_score: depression, phq4_total: anxiety + depression, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
+    triggerMoodPredictions(req.dbUser.id);
   } catch (err) { next(err); }
 });
 
@@ -234,6 +264,7 @@ router.post('/log/affect', auth, resolveUser, validate(schemas.affect), async (r
       data: { affect_valence: val, affect_arousal: aro, affect_quadrant: quadrant, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
+    triggerMoodPredictions(req.dbUser.id);
   } catch (err) { next(err); }
 });
 
@@ -289,6 +320,7 @@ router.post('/log/focus', auth, resolveUser, validate(schemas.focus), async (req
       data: { cognitive_load_score: cognitiveLoadScore, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
+    triggerMoodPredictions(req.dbUser.id);
   } catch (err) { next(err); }
 });
 
@@ -341,6 +373,7 @@ router.post('/log/sleep', auth, resolveUser, validate(schemas.sleep), async (req
       data: { sleep_satisfaction: sleepSatisfaction, hours_slept: req.body.hours_slept, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
+    triggerMoodPredictions(req.dbUser.id);
   } catch (err) { next(err); }
 });
 
@@ -432,6 +465,7 @@ router.post('/log/complete', auth, resolveUser, validate(schemas.complete), asyn
       data: { phq4_total: anxiety + depression, affect_quadrant: quadrant, cognitive_load_score: cognitiveLoadScore, sleep_satisfaction: sleepSatisfaction, psych_burden_score: psychBurdenScore, log_date: entry.logDate },
       meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
     });
+    triggerMoodPredictions(req.dbUser.id);
   } catch (err) { next(err); }
 });
 
