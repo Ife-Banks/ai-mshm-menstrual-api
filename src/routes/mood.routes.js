@@ -511,7 +511,10 @@ router.get('/history', auth, resolveUser, async (req, res, next) => {
  */
 router.post('/predict/mental-health', auth, resolveUser, async (req, res, next) => {
   try {
-    const logs = await getAllUserLogs(req.dbUser.id);
+    const logs = await prisma.moodDailyLog.findMany({
+      where: { userId: req.dbUser.id },
+      orderBy: { logDate: 'asc' },
+    });
     if (logs.length < 3) {
       return res.status(422).json({
         success: false, status: 422,
@@ -557,7 +560,10 @@ router.post('/predict/mental-health', auth, resolveUser, async (req, res, next) 
  */
 router.post('/predict/metabolic', auth, resolveUser, async (req, res, next) => {
   try {
-    const logs = await getAllUserLogs(req.dbUser.id);
+    const logs = await prisma.moodDailyLog.findMany({
+      where: { userId: req.dbUser.id },
+      orderBy: { logDate: 'asc' },
+    });
     if (logs.length < 3) {
       return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
     }
@@ -585,7 +591,10 @@ router.post('/predict/metabolic', auth, resolveUser, async (req, res, next) => {
  */
 router.post('/predict/cardio-neuro', auth, resolveUser, async (req, res, next) => {
   try {
-    const logs = await getAllUserLogs(req.dbUser.id);
+    const logs = await prisma.moodDailyLog.findMany({
+      where: { userId: req.dbUser.id },
+      orderBy: { logDate: 'asc' },
+    });
     if (logs.length < 3) {
       return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
     }
@@ -613,7 +622,10 @@ router.post('/predict/cardio-neuro', auth, resolveUser, async (req, res, next) =
  */
 router.post('/predict/reproductive', auth, resolveUser, async (req, res, next) => {
   try {
-    const logs = await getAllUserLogs(req.dbUser.id);
+    const logs = await prisma.moodDailyLog.findMany({
+      where: { userId: req.dbUser.id },
+      orderBy: { logDate: 'asc' },
+    });
     if (logs.length < 3) {
       return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
     }
