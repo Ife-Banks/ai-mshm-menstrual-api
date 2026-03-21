@@ -52,7 +52,7 @@ function deriveFields(input) {
 async function saveMoodLog(userId, input, cyclePhase = null) {
   const derived = deriveFields(input);
 
-  return prisma.moodCognitiveLog.create({
+  return prisma.moodDailyLog.create({
     data: {
       userId,
       phq4Item1: input.phq4_item1,
@@ -81,7 +81,7 @@ async function saveMoodLog(userId, input, cyclePhase = null) {
 }
 
 async function getUserLogs(userId, limit = 30) {
-  return prisma.moodCognitiveLog.findMany({
+  return prisma.moodDailyLog.findMany({
     where: { userId },
     orderBy: { logDate: 'desc' },
     take: limit,
@@ -89,7 +89,7 @@ async function getUserLogs(userId, limit = 30) {
 }
 
 async function getAllUserLogs(userId) {
-  return prisma.moodCognitiveLog.findMany({
+  return prisma.moodDailyLog.findMany({
     where: { userId },
     orderBy: { logDate: 'asc' },
   });
