@@ -9,7 +9,8 @@
     "build": "prisma generate",
     "postinstall": "prisma generate",
     "convert": "python scripts/convert_to_onnx.py",
-    "convert:mood": "python scripts/convert_mood_to_onnx.py"
+    "convert:mood": "python scripts/convert_mood_to_onnx.py",
+    "convert:rppg": "python scripts/convert_rppg_to_onnx.py"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",

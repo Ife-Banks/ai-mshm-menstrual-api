@@ -17,6 +17,8 @@ model User {
   predictions PredictionResult[]
   moodLogs    MoodDailyLog[]
   moodPredictions MoodPredictionResult[]
+  rppgSessions    RppgSession[]
+  rppgPredictions RppgPredictionResult[]
 }
 
 model CycleLog {
@@ -191,4 +193,79 @@ model MoodPredictionResult {
   metsynRiskProb   Float?
   metsynRiskFlag   Int?
   metsynSeverity   String?
+}
+
+model RppgSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  rmssd     Float
+  meanTemp  Float
+  meanEda   Float
+  asi       Float?
+
+  sessionType    String   @default("checkin")
+  sessionQuality String?
+  capturedAt     DateTime @default(now())
+
+  predictions RppgPredictionResult[] @relation("RppgSessionPredictions")
+}
+
+model RppgPredictionResult {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  group       String
+  predictedAt DateTime @default(now())
+  nSessionsUsed Int
+
+  rmssdMean  Float
+  rmssdMin   Float
+  rmssdStd   Float
+  tempMean   Float
+  tempStd    Float
+  edaMean    Float
+  edaMax     Float
+  edaStd     Float
+
+  lowRmssdFlag    Int
+  modLowRmssdFlag Int
+  highEdaFlag     Int
+  highAsiFlag     Int?
+
+  stressRiskScore Float?
+  stressRiskProb  Float?
+  stressRiskFlag  Int?
+  stressSeverity  String?
+
+  cvdRiskScore    Float?
+  cvdRiskProb     Float?
+  cvdRiskFlag     Int?
+  cvdSeverity     String?
+
+  t2dRiskScore    Float?
+  t2dRiskProb     Float?
+  t2dRiskFlag     Int?
+  t2dSeverity     String?
+
+  metabolicRiskScore Float?
+  metabolicRiskProb  Float?
+  metabolicRiskFlag  Int?
+  metabolicSeverity  String?
+
+  heartFailureRiskScore Float?
+  heartFailureRiskProb  Float?
+  heartFailureRiskFlag  Int?
+  heartFailureSeverity  String?
+
+  infertilityRiskScore Float?
+  infertilityRiskProb  Float?
+  infertilityRiskFlag  Int?
+  infertilitySeverity  String?
+
+  anomalyFlag  Int?
+  anomalyScore Float?
+
+  sessions RppgSession[] @relation("RppgSessionPredictions")
 }

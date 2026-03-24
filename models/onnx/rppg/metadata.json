@@ -1,0 +1,108 @@
+{
+  "feature_names": [
+    "RMSSD_mean",
+    "RMSSD_min",
+    "RMSSD_std",
+    "Temp_mean",
+    "Temp_std",
+    "EDA_mean",
+    "EDA_max",
+    "EDA_std",
+    "n_trials"
+  ],
+  "model_type": "rPPG_risk_score",
+  "n_features": 9,
+  "feature_index_map": {
+    "f0": "RMSSD_mean",
+    "f1": "RMSSD_min",
+    "f2": "RMSSD_std",
+    "f3": "Temp_mean",
+    "f4": "Temp_std",
+    "f5": "EDA_mean",
+    "f6": "EDA_max",
+    "f7": "EDA_std",
+    "f8": "n_trials"
+  },
+  "scaler": {
+    "mean": [
+      60.486454316320106,
+      30.356729678638942,
+      30.860795039072283,
+      34.27762885948331,
+      1.9782584832360475,
+      1.8957051039697543,
+      5.25937618147448,
+      2.1774748934134465,
+      4.826086956521739
+    ],
+    "scale": [
+      17.962568024457198,
+      14.673588933125533,
+      16.61816003947623,
+      1.006839115371316,
+      0.7465676569369046,
+      1.4185155850469915,
+      4.4275944076269775,
+      1.9226605816869042,
+      0.7301241575542027
+    ],
+    "type": "StandardScaler"
+  },
+  "trained_at": "2026-03-17T18:08:31",
+  "model_metrics": {
+    "Stress": {
+      "pr_auc": 0.9909,
+      "accuracy_cv": 0.9406,
+      "accuracy_full": 1.0,
+      "rmse_cv": 0.0179,
+      "rmse_full": 0.0076,
+      "positives": 209,
+      "total": 529
+    },
+    "CVD": {
+      "pr_auc": 0.9931,
+      "accuracy_cv": 0.9444,
+      "accuracy_full": 0.9981,
+      "rmse_cv": 0.0174,
+      "rmse_full": 0.0076,
+      "positives": 241,
+      "total": 529
+    },
+    "T2D": {
+      "pr_auc": 0.998,
+      "accuracy_cv": 0.9815,
+      "accuracy_full": 0.9905,
+      "rmse_cv": 0.0137,
+      "rmse_full": 0.005,
+      "positives": 70,
+      "total": 529
+    },
+    "Metabolic": {
+      "pr_auc": 0.9917,
+      "accuracy_cv": 0.9417,
+      "accuracy_full": 0.9981,
+      "rmse_cv": 0.0172,
+      "rmse_full": 0.0076,
+      "positives": 203,
+      "total": 529
+    },
+    "HeartFailure": {
+      "pr_auc": 0.4,
+      "accuracy_cv": 0.9962,
+      "accuracy_full": 0.9981,
+      "rmse_cv": 0.0144,
+      "rmse_full": 0.0044,
+      "positives": 2,
+      "total": 529
+    },
+    "Infertility": {
+      "pr_auc": 0.998,
+      "accuracy_cv": 0.9815,
+      "accuracy_full": 0.9905,
+      "rmse_cv": 0.0137,
+      "rmse_full": 0.005,
+      "positives": 70,
+      "total": 529
+    }
+  }
+}

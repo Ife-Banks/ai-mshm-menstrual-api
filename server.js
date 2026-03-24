@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { loadModels } = require('./src/loaders/modelLoader');
 const { loadMoodModels } = require('./src/loaders/moodModelLoader');
+const { loadRppgModels } = require('./src/loaders/rppgModelLoader');
 const prisma = require('./src/db/prisma');
 const app = require('./src/app');
 
@@ -16,6 +17,9 @@ const PORT = process.env.PORT || 3000;
     
     console.log('[Server] Loading mood ONNX models...');
     await loadMoodModels();
+
+    console.log('[Server] Loading rPPG ONNX models...');
+    await loadRppgModels();
     
     app.listen(PORT, () => {
       console.log(`[Server] ✓ Running on http://localhost:${PORT}`);
