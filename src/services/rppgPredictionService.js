@@ -15,6 +15,14 @@ function std(arr) {
 }
 
 function getSeverity(score, bins, labels) {
+  // Handle missing bins/labels gracefully
+  if (!bins || !labels || !bins.length || !labels.length) {
+    // Default severity calculation
+    if (score < 0.3) return 'Low';
+    if (score < 0.6) return 'Medium';
+    return 'High';
+  }
+  
   for (let i = 0; i < bins.length - 1; i++) {
     if (score >= bins[i] && score < bins[i + 1]) {
       return labels[i];

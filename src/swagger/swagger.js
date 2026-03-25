@@ -59,9 +59,9 @@ const options = {
       { name: 'rPPG / HRV', description: 'Passive rPPG/HRV session logging and predictions.' },
     ],
     servers: [
-      { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production server' },
-      { url: 'http://localhost:3000', description: 'Local development server' },
-    ],
+  { url: 'http://localhost:3000', description: 'Local development server' },
+  { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production server' },
+],
     components: {
       securitySchemes: {
         BearerAuth: {
