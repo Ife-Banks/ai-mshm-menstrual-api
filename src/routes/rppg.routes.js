@@ -23,6 +23,13 @@ const DISEASE_GROUPS = {
   stress_reproductive: ['Stress', 'Infertility'],
 };
 
+// Minimum data requirements per prediction type
+const MIN_REQUIREMENTS = {
+  metabolic_cardio: { minSessions: 3, minSpanDays: 30 },
+  stress_reproductive: { minSessions: 3, minSpanDays: 7 },
+  anomaly: { minSessions: 1, minSpanDays: 0 },
+};
+
 const rppgSessionSchema = Joi.object({
   rmssd: Joi.number().min(5).max(300).required()
     .description('RMSSD in milliseconds (5–300). Low values (<20ms) indicate chronic stress.'),
@@ -63,6 +70,28 @@ function validate(schema) {
   };
 }
 
+function buildReliability(clinicalFlags, nSessions, diseaseGroup) {
+  const req = MIN_REQUIREMENTS[diseaseGroup] || { minSessions: 1, minSpanDays: 0 };
+  const sessionsMet = nSessions >= req.minSessions;
+  const spanMet = (clinicalFlags.SpanDays || 0) >= req.minSpanDays;
+  let dataQuality;
+  if (diseaseGroup === 'metabolic_cardio') {
+    dataQuality = sessionsMet && spanMet && clinicalFlags.RMSSD_Declining_Flag === 1 ? 'good' : 'insufficient';
+  } else {
+    dataQuality = sessionsMet && spanMet ? 'good' : 'insufficient';
+  }
+  return {
+    sessions_used: nSessions,
+    days_span: clinicalFlags.SpanDays || 0,
+    sessions_required: req.minSessions,
+    days_required: req.minSpanDays,
+    has_declining_rmssd_trend: clinicalFlags.RMSSD_Declining_Flag === 1,
+    rmssd_slope: clinicalFlags.RMSSD_Slope || 0,
+    data_quality: dataQuality,
+    disclaimer: 'Predictions are based on HRV-biometric models. Not a clinical diagnosis.',
+  };
+}
+
 function buildPredictionResponse({
   message,
   group,
@@ -86,6 +115,7 @@ function buildPredictionResponse({
       feature_snapshot: featureSnapshot,
       clinical_flags: clinicalFlags,
       predictions,
+      reliability: buildReliability(clinicalFlags, sessionsUsed, group),
     },
     meta: {
       request_id: requestId,
@@ -186,7 +216,7 @@ router.post('/session', auth, resolveUser, validate(rppgSessionSchema), async (r
  * /api/v1/rppg/predict/metabolic-cardio:
  *   post:
  *     summary: Predict metabolic & cardiovascular risk
- *     description: Aggregates stored rPPG sessions and runs CVD, T2D, Metabolic, and Heart Failure models.
+ *     description: Aggregates stored rPPG sessions and runs CVD, T2D, Metabolic, and Heart Failure models. Requires ≥3 sessions spanning ≥30 days with a declining RMSSD trend for valid CVD predictions.
  *     tags: [rPPG / HRV]
  *     security:
  *       - BearerAuth: []
@@ -198,15 +228,31 @@ router.post('/session', auth, resolveUser, validate(rppgSessionSchema), async (r
  */
 router.post('/predict/metabolic-cardio', auth, resolveUser, async (req, res, next) => {
   try {
+    const reqs = MIN_REQUIREMENTS.metabolic_cardio;
     const {
       featureVector,
       featureSnapshot,
       clinicalFlags,
       nSessions,
       sessions,
-    } = await buildRppgFeatureVector(req.dbUser.id);
+    } = await buildRppgFeatureVector(req.dbUser.id, reqs.minSessions, reqs.minSpanDays);
 
-    const predictions = await runRppgPredictions(featureVector, DISEASE_GROUPS.metabolic_cardio);
+    let predictions = await runRppgPredictions(featureVector, DISEASE_GROUPS.metabolic_cardio);
+
+    // Override CVD/Metabolic if RMSSD is not declining
+    if (clinicalFlags.RMSSD_Declining_Flag !== 1) {
+      const trendWarning = 'Prediction overridden: RMSSD is not showing a declining trend over the measurement period. CVD/Metabolic risk requires a sustained HRV decline.';
+      for (const disease of ['CVD', 'Metabolic']) {
+        if (predictions[disease]) {
+          predictions[disease].risk_score_overridden = true;
+          predictions[disease].risk_score = null;
+          predictions[disease].risk_flag = 0;
+          predictions[disease].severity = 'Insufficient';
+          predictions[disease].insufficient_trend_data = true;
+          predictions[disease].warning = trendWarning;
+        }
+      }
+    }
 
     await saveRppgPredictionResult({
       userId: req.dbUser.id,
@@ -240,7 +286,7 @@ router.post('/predict/metabolic-cardio', auth, resolveUser, async (req, res, nex
  * /api/v1/rppg/predict/stress-reproductive:
  *   post:
  *     summary: Predict stress & reproductive risk
- *     description: Aggregates rPPG sessions and runs Stress and Infertility models.
+ *     description: Aggregates rPPG sessions and runs Stress and Infertility models. Requires ≥3 sessions spanning ≥7 days.
  *     tags: [rPPG / HRV]
  *     security:
  *       - BearerAuth: []
@@ -252,13 +298,14 @@ router.post('/predict/metabolic-cardio', auth, resolveUser, async (req, res, nex
  */
 router.post('/predict/stress-reproductive', auth, resolveUser, async (req, res, next) => {
   try {
+    const reqs = MIN_REQUIREMENTS.stress_reproductive;
     const {
       featureVector,
       featureSnapshot,
       clinicalFlags,
       nSessions,
       sessions,
-    } = await buildRppgFeatureVector(req.dbUser.id);
+    } = await buildRppgFeatureVector(req.dbUser.id, reqs.minSessions, reqs.minSpanDays);
 
     const predictions = await runRppgPredictions(featureVector, DISEASE_GROUPS.stress_reproductive);
 
@@ -294,7 +341,7 @@ router.post('/predict/stress-reproductive', auth, resolveUser, async (req, res, 
  * /api/v1/rppg/predict/anomaly:
  *   post:
  *     summary: Run biometric anomaly detection
- *     description: Uses IsolationForest (or a rule-based fallback) to flag extreme autonomic shifts.
+ *     description: Uses IsolationForest (or a rule-based fallback) to flag extreme autonomic shifts. Requires at least 1 valid session.
  *     tags: [rPPG / HRV]
  *     security:
  *       - BearerAuth: []
@@ -306,13 +353,14 @@ router.post('/predict/stress-reproductive', auth, resolveUser, async (req, res, 
  */
 router.post('/predict/anomaly', auth, resolveUser, async (req, res, next) => {
   try {
+    const reqs = MIN_REQUIREMENTS.anomaly;
     const {
       featureVector,
       featureSnapshot,
       clinicalFlags,
       nSessions,
       sessions,
-    } = await buildRppgFeatureVector(req.dbUser.id);
+    } = await buildRppgFeatureVector(req.dbUser.id, reqs.minSessions, reqs.minSpanDays);
 
     const anomalyResult = await runAnomalyDetection(featureVector);
 

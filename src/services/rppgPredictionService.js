@@ -14,15 +14,26 @@ function std(arr) {
   return Math.sqrt(variance);
 }
 
+function linregressSlope(xs, ys) {
+  if (xs.length < 2) return 0;
+  const n = xs.length;
+  const xMean = mean(xs);
+  const yMean = mean(ys);
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - xMean;
+    num += dx * (ys[i] - yMean);
+    den += dx * dx;
+  }
+  return den !== 0 ? num / den : 0;
+}
+
 function getSeverity(score, bins, labels) {
-  // Handle missing bins/labels gracefully
   if (!bins || !labels || !bins.length || !labels.length) {
-    // Default severity calculation
     if (score < 0.3) return 'Low';
     if (score < 0.6) return 'Medium';
     return 'High';
   }
-  
   for (let i = 0; i < bins.length - 1; i++) {
     if (score >= bins[i] && score < bins[i + 1]) {
       return labels[i];
@@ -48,7 +59,10 @@ const FIELD_PREFIX = {
   Infertility: 'infertility',
 };
 
-async function buildRppgFeatureVector(userId) {
+// HeartFailure had only 2 positive samples in the 529-subject training set
+const UNRELIABLE_DISEASES = new Set(['HeartFailure']);
+
+async function buildRppgFeatureVector(userId, minSessions = 1, minSpanDays = 0) {
   const sessions = await prisma.rppgSession.findMany({
     where: {
       userId,
@@ -61,6 +75,35 @@ async function buildRppgFeatureVector(userId) {
     const err = new Error('NO_RPPG_DATA');
     err.status = 422;
     err.expose = true;
+    err.details = { required_sessions: minSessions, actual_sessions: 0 };
+    throw err;
+  }
+
+  if (sessions.length < minSessions) {
+    const err = new Error('INSUFFICIENT_RPPG_SESSIONS');
+    err.status = 422;
+    err.expose = true;
+    err.details = {
+      required_sessions: minSessions,
+      actual_sessions: sessions.length,
+      message: `Need at least ${minSessions} rPPG sessions; got ${sessions.length}.`,
+    };
+    throw err;
+  }
+
+  const firstDate = new Date(sessions[0].capturedAt);
+  const lastDate = new Date(sessions[sessions.length - 1].capturedAt);
+  const spanDays = (lastDate - firstDate) / (1000 * 60 * 60 * 24);
+
+  if (spanDays < minSpanDays) {
+    const err = new Error('INSUFFICIENT_RPPG_SPAN');
+    err.status = 422;
+    err.expose = true;
+    err.details = {
+      required_days: minSpanDays,
+      actual_days: Math.round(spanDays * 10) / 10,
+      message: `Sessions must span at least ${minSpanDays} days; currently span ${Math.round(spanDays * 10) / 10} days.`,
+    };
     throw err;
   }
 
@@ -80,6 +123,11 @@ async function buildRppgFeatureVector(userId) {
   const n_trials = sessions.length;
   const ASI_mean = asiVals.length ? mean(asiVals) : null;
 
+  // RMSSD slope over time (days since first session) — declining = negative slope
+  const daysSinceFirst = sessions.map(s => (new Date(s.capturedAt) - firstDate) / (1000 * 60 * 60 * 24));
+  const RMSSD_slope = linregressSlope(daysSinceFirst, rmssdVals);
+  const RMSSD_declining = RMSSD_slope < -0.05;
+
   const clinicalFlags = {
     LowRMSSD_Flag: RMSSD_mean < 20 ? 1 : 0,
     ModLowRMSSD_Flag: RMSSD_mean < 30 ? 1 : 0,
@@ -87,7 +135,10 @@ async function buildRppgFeatureVector(userId) {
     ElevatedEDA_Flag: EDA_mean > 2.0 ? 1 : 0,
     HighTemp_Flag: Temp_mean > 37.0 ? 1 : 0,
     LowTemp_Flag: Temp_mean < 30.0 ? 1 : 0,
-    HighASI_Flag: ASI_mean !== null && ASI_mean > 0.1 ? 1 : 0,
+    HighASI_Flag: ASI_mean !== null && ASI_mean > 0.5 ? 1 : 0,
+    RMSSD_Declining_Flag: RMSSD_declining ? 1 : 0,
+    RMSSD_Slope: Math.round(RMSSD_slope * 10000) / 10000,
+    SpanDays: Math.round(spanDays * 10) / 10,
   };
 
   const featureVector = [
@@ -107,6 +158,8 @@ async function buildRppgFeatureVector(userId) {
     EDA_max,
     EDA_std,
     n_trials,
+    RMSSD_slope: Math.round(RMSSD_slope * 10000) / 10000,
+    span_days: Math.round(spanDays * 10) / 10,
   };
 
   return { featureVector, featureSnapshot, clinicalFlags, nSessions: sessions.length, sessions };
@@ -140,6 +193,7 @@ async function runRppgPredictions(featureVector, diseaseList) {
         risk_flag: 0,
         severity: null,
         threshold_used: meta.flag_thresholds?.[disease] ?? null,
+        reliability_warning: null,
       };
       continue;
     }
@@ -159,13 +213,20 @@ async function runRppgPredictions(featureVector, diseaseList) {
     const riskFlag = riskScore >= threshold ? 1 : 0;
     const severity = getSeverity(riskScore, meta.severity_bins, meta.severity_labels);
 
-    results[disease] = {
+    const result = {
       risk_probability: riskProbability,
       risk_score: riskScore,
       risk_flag: riskFlag,
       severity,
       threshold_used: threshold,
+      reliability_warning: null,
     };
+
+    if (UNRELIABLE_DISEASES.has(disease)) {
+      result.reliability_warning = 'Only 2 positive samples in training set — result is not clinically reliable.';
+    }
+
+    results[disease] = result;
   }
 
   return results;
