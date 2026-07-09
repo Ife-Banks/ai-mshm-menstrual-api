@@ -198,35 +198,47 @@ async function runRppgPredictions(featureVector, diseaseList) {
       continue;
     }
 
-    const clfOut = Object.values(await clf.run({ float_input: tensor }));
-    const regOut = Object.values(await reg.run({ float_input: tensor }));
+    try {
+      const clfOut = Object.values(await clf.run({ float_input: tensor }));
+      const regOut = Object.values(await reg.run({ float_input: tensor }));
 
-    const probData = clfOut[0]?.data ?? [];
-    const riskProbability = probData.length >= 2
-      ? parseFloat(Number(probData[1]).toFixed(4))
-      : parseFloat(Number(probData[0] ?? 0).toFixed(4));
+      const probData = clfOut[0]?.data ?? [];
+      const riskProbability = probData.length >= 2
+        ? parseFloat(Number(probData[1]).toFixed(4))
+        : parseFloat(Number(probData[0] ?? 0).toFixed(4));
 
-    const rawScore = parseFloat(Number(regOut[0]?.data[0] ?? 0).toFixed(4));
-    const riskScore = Math.min(1, Math.max(0, rawScore));
+      const rawScore = parseFloat(Number(regOut[0]?.data[0] ?? 0).toFixed(4));
+      const riskScore = Math.min(1, Math.max(0, rawScore));
 
-    const threshold = meta.flag_thresholds?.[disease] ?? 0.4;
-    const riskFlag = riskScore >= threshold ? 1 : 0;
-    const severity = getSeverity(riskScore, meta.severity_bins, meta.severity_labels);
+      const threshold = meta.flag_thresholds?.[disease] ?? 0.4;
+      const riskFlag = riskScore >= threshold ? 1 : 0;
+      const severity = getSeverity(riskScore, meta.severity_bins, meta.severity_labels);
 
-    const result = {
-      risk_probability: riskProbability,
-      risk_score: riskScore,
-      risk_flag: riskFlag,
-      severity,
-      threshold_used: threshold,
-      reliability_warning: null,
-    };
+      const result = {
+        risk_probability: riskProbability,
+        risk_score: riskScore,
+        risk_flag: riskFlag,
+        severity,
+        threshold_used: threshold,
+        reliability_warning: null,
+      };
 
-    if (UNRELIABLE_DISEASES.has(disease)) {
-      result.reliability_warning = 'Only 2 positive samples in training set — result is not clinically reliable.';
+      if (UNRELIABLE_DISEASES.has(disease)) {
+        result.reliability_warning = 'Only 2 positive samples in training set — result is not clinically reliable.';
+      }
+
+      results[disease] = result;
+    } catch (err) {
+      console.error(`[rPPG] Model inference failed for ${disease}:`, err.message);
+      results[disease] = {
+        risk_probability: null,
+        risk_score: null,
+        risk_flag: 0,
+        severity: null,
+        threshold_used: meta.flag_thresholds?.[disease] ?? null,
+        reliability_warning: `Model error: ${err.message}`,
+      };
     }
-
-    results[disease] = result;
   }
 
   return results;
