@@ -160,6 +160,8 @@ async function runDiseasePredictions(featureVector, diseaseList) {
   const meta     = getMoodMetadata();
   const results  = {};
 
+  if (!sessions || !sessions.classifiers) return results;
+
   const tensor = new ort.Tensor(
     'float32',
     Float32Array.from(featureVector),
@@ -167,38 +169,42 @@ async function runDiseasePredictions(featureVector, diseaseList) {
   );
 
   for (const disease of diseaseList) {
-    if (!sessions.classifiers[disease]) continue;
-    
-    const clf = sessions.classifiers[disease];
-    const reg = sessions.regressors[disease];
+    try {
+      if (!sessions.classifiers[disease]) continue;
+      
+      const clf = sessions.classifiers[disease];
+      const reg = sessions.regressors[disease];
 
-    const [clfOut] = Object.values(await clf.run({ float_input: tensor }));
-    const [regOut] = Object.values(await reg.run({ float_input: tensor }));
+      const [clfOut] = Object.values(await clf.run({ float_input: tensor }));
+      const [regOut] = Object.values(await reg.run({ float_input: tensor }));
 
-    const probData = clfOut.data;
-    const risk_probability = probData.length >= 2
-      ? parseFloat(Number(probData[1]).toFixed(4))
-      : parseFloat(Number(probData[0]).toFixed(4));
+      const probData = clfOut.data;
+      const risk_probability = probData.length >= 2
+        ? parseFloat(Number(probData[1]).toFixed(4))
+        : parseFloat(Number(probData[0]).toFixed(4));
 
-    const risk_score = Math.min(1, Math.max(0,
-      parseFloat(Number(regOut.data[0]).toFixed(4))
-    ));
+      const risk_score = Math.min(1, Math.max(0,
+        parseFloat(Number(regOut.data[0]).toFixed(4))
+      ));
 
-    const threshold  = meta?.flag_thresholds[disease] || 0.5;
-    const risk_flag  = risk_score >= threshold ? 1 : 0;
-    const severity   = getSeverity(risk_score, meta?.severity_bins || [0, 0.2, 0.4, 0.6, 0.8, 1], meta?.severity_labels || ['Minimal', 'Mild', 'Moderate', 'Severe', 'Extreme']);
-    const weight     = meta?.layer_weights[disease] || 1.0;
+      const threshold  = meta?.flag_thresholds[disease] || 0.5;
+      const risk_flag  = risk_score >= threshold ? 1 : 0;
+      const severity   = getSeverity(risk_score, meta?.severity_bins || [0, 0.2, 0.4, 0.6, 0.8, 1], meta?.severity_labels || ['Minimal', 'Mild', 'Moderate', 'Severe', 'Extreme']);
+      const weight     = meta?.layer_weights[disease] || 1.0;
 
-    results[disease] = {
-      risk_probability,
-      risk_score,
-      risk_flag,
-      severity,
-      threshold_used:        threshold,
-      layer_weight:        weight,
-      weighted_contribution: parseFloat((risk_score * weight).toFixed(4)),
-      description:           meta?.descriptions[disease] || '',
-    };
+      results[disease] = {
+        risk_probability,
+        risk_score,
+        risk_flag,
+        severity,
+        threshold_used:        threshold,
+        layer_weight:        weight,
+        weighted_contribution: parseFloat((risk_score * weight).toFixed(4)),
+        description:           meta?.descriptions[disease] || '',
+      };
+    } catch (err) {
+      console.warn(`[MoodPrediction] ${disease} inference failed: ${err.message}`);
+    }
   }
 
   return results;
