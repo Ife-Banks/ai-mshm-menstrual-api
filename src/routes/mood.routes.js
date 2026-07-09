@@ -673,4 +673,39 @@ router.get('/predictions', auth, resolveUser, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * @swagger
+ * /api/v1/mood/predictions/latest:
+ *   get:
+ *     summary: Get latest mood prediction per group
+ *     description: Returns the most recent prediction result for each disease group (mental_health, metabolic, cardio_neuro, reproductive).
+ *     tags: [Mood Prediction]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Latest predictions retrieved
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/predictions/latest', auth, resolveUser, async (req, res, next) => {
+  try {
+    const groups = ['mental_health', 'metabolic', 'cardio_neuro', 'reproductive'];
+    const latest = {};
+    for (const group of groups) {
+      const result = await prisma.moodPredictionResult.findFirst({
+        where: { userId: req.dbUser.id, group },
+        orderBy: { predictedAt: 'desc' },
+      });
+      if (result) latest[group] = result;
+    }
+    res.json({
+      success: true, status: 200,
+      message: 'Latest predictions retrieved',
+      data: { predictions: latest, groups_found: Object.keys(latest).length },
+      meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
