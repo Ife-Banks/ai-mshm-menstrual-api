@@ -3,6 +3,7 @@ const { execSync } = require('child_process');
 const { loadModels } = require('./src/loaders/modelLoader');
 const { loadMoodModels } = require('./src/loaders/moodModelLoader');
 const { loadRppgModels } = require('./src/loaders/rppgModelLoader');
+const { loadV8Models } = require('./src/loaders/rppgV8ModelLoader');
 const prisma = require('./src/db/prisma');
 const app = require('./src/app');
 
@@ -53,6 +54,10 @@ async function runMigrations() {
     console.log('[Server] Loading rPPG ONNX models...');
     await loadRppgModels();
     console.log('[Server] ✓ rPPG models loaded');
+
+    console.log('[Server] Loading rPPG v8 ONNX models...');
+    await loadV8Models();
+    console.log('[Server] ✓ rPPG v8 models loaded');
 
     app.listen(PORT, () => {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

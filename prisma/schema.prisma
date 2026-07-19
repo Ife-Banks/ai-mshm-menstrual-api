@@ -19,6 +19,8 @@ model User {
   moodPredictions MoodPredictionResult[]
   rppgSessions    RppgSession[]
   rppgPredictions RppgPredictionResult[]
+  rppgV8Sessions       RppgV8Session[]
+  rppgV8Predictions    RppgV8PredictionResult[]
 }
 
 model CycleLog {
@@ -268,4 +270,112 @@ model RppgPredictionResult {
   anomalyScore Float?
 
   sessions RppgSession[] @relation("RppgSessionPredictions")
+}
+
+model RppgV8Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  rmssd           Float
+  hf              Float
+  lfHfRatio       Float
+  heartRate       Float
+  hrv             Float
+  estimatedSpO2   Float
+  skinTemperature Float
+  hrTrend         Float?
+  meanEda         Float
+  meanTemp        Float
+  asi             Float?
+  rmssdTrend      Float?
+
+  ac              Float?
+  dc              Float?
+  acDcRatio       Float?
+  pulseAmplitude  Float?
+  signalQuality   Float?
+  respiratoryRate Float?
+
+  sessionType    String   @default("checkin")
+  sessionQuality String?
+  capturedAt     DateTime @default(now())
+}
+
+model RppgV8PredictionResult {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  predictedAt DateTime @default(now())
+  nSessionsUsed Int
+
+  sleepQualityScore     Float?
+  focusMemoryScore      Float?
+  mentalWellnessScore   Float?
+  moodScoreScore        Float?
+  metabolicSyndromeScore Float?
+  t2dScore              Float?
+  cardiovascularScore   Float?
+  heartFailureScore     Float?
+  chronicStressScore    Float?
+  infertilityScore      Float?
+
+  riskSleepQualityScore     Float?
+  riskSleepQualityProb      Float?
+  riskSleepQualityFlag      Int?
+  riskSleepQualitySeverity  String?
+
+  riskFocusMemoryScore      Float?
+  riskFocusMemoryProb       Float?
+  riskFocusMemoryFlag       Int?
+  riskFocusMemorySeverity   String?
+
+  riskMentalWellnessScore   Float?
+  riskMentalWellnessProb    Float?
+  riskMentalWellnessFlag    Int?
+  riskMentalWellnessSeverity String?
+
+  riskMoodCheckScore        Float?
+  riskMoodCheckProb         Float?
+  riskMoodCheckFlag         Int?
+  riskMoodCheckSeverity     String?
+
+  riskMetabolicScore        Float?
+  riskMetabolicProb         Float?
+  riskMetabolicFlag         Int?
+  riskMetabolicSeverity     String?
+
+  riskT2dScore              Float?
+  riskT2dProb               Float?
+  riskT2dFlag               Int?
+  riskT2dSeverity           String?
+
+  riskCvdScore              Float?
+  riskCvdProb               Float?
+  riskCvdFlag               Int?
+  riskCvdSeverity           String?
+
+  riskHeartFailureScore     Float?
+  riskHeartFailureProb      Float?
+  riskHeartFailureFlag      Int?
+  riskHeartFailureSeverity  String?
+
+  riskChronicStressScore    Float?
+  riskChronicStressProb     Float?
+  riskChronicStressFlag     Int?
+  riskChronicStressSeverity String?
+
+  riskInfertilityScore      Float?
+  riskInfertilityProb       Float?
+  riskInfertilityFlag       Int?
+  riskInfertilitySeverity   String?
+
+  dlSleepQualityScore   Float?
+  dlFocusMemoryScore    Float?
+  dlMentalWellnessScore Float?
+  dlMoodScoreScore      Float?
+
+  moodCheckLabel        String?
+  moodCheckConfidence   Float?
+  moodCheckProbabilities Json?
 }
