@@ -3,3 +3,18 @@ node_modules/
 .env.local
 *.log
 .DS_Store
+
+# Python virtual env
+.venv/
+
+# Large model artifacts (not needed by Node.js runtime)
+*.pkl
+*.keras
+*.joblib
+*.csv
+*.ipynb
+
+# Training/export outputs (regenerable from scripts)
+models/rppg_v8/rppg_v8_bundle.pkl
+models/rppg_v8/v8_training_metadata.json
+models/rppg_v8/*.keras
