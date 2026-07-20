@@ -33,9 +33,9 @@ const v8SessionSchema = Joi.object({
     .description('Autonomic Stress Index'),
   rmssd_trend: Joi.number().min(-50).max(50).allow(null).default(null)
     .description('RMSSD trend slope (ms/trial)'),
-  ac: Joi.number().min(0).max(100).allow(null).default(null)
+  ac: Joi.number().min(0).max(255).allow(null).default(null)
     .description('AC component'),
-  dc: Joi.number().min(0).max(100).allow(null).default(null)
+  dc: Joi.number().min(0).max(255).allow(null).default(null)
     .description('DC component'),
   ac_dc_ratio: Joi.number().min(0).max(10).allow(null).default(null)
     .description('AC/DC ratio'),
