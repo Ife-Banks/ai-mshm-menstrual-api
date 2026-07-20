@@ -11,15 +11,22 @@ const PORT = process.env.PORT || 3000;
 const MAX_MIGRATE_RETRIES = 5;
 
 async function runMigrations() {
+  if (process.env.SKIP_MIGRATIONS === 'true') {
+    console.log('[Migrate] ⏭ Skipped (SKIP_MIGRATIONS=true)');
+    return;
+  }
   for (let attempt = 1; attempt <= MAX_MIGRATE_RETRIES; attempt++) {
     try {
       console.log(`[Migrate] Attempt ${attempt}/${MAX_MIGRATE_RETRIES} — running prisma migrate deploy...`);
-      execSync('npx prisma migrate deploy', { stdio: 'inherit', timeout: 60000 });
+      execSync('npx prisma migrate deploy', { stdio: 'inherit', timeout: 120000 });
       console.log('[Migrate] ✓ Migrations applied');
       return;
     } catch (err) {
       console.error(`[Migrate] ✗ Attempt ${attempt} failed: ${err.message}`);
-      if (attempt === MAX_MIGRATE_RETRIES) throw err;
+      if (attempt === MAX_MIGRATE_RETRIES) {
+        console.warn('[Migrate] ⚠ All attempts failed — continuing without migrations (tables may already exist)');
+        return;
+      }
       const delay = attempt * 5000;
       console.log(`[Migrate] Retrying in ${delay / 1000}s...`);
       await new Promise(r => setTimeout(r, delay));
