@@ -41,7 +41,7 @@ const v8SessionSchema = Joi.object({
     .description('AC/DC ratio'),
   pulse_amplitude: Joi.number().min(0).max(100).allow(null).default(null)
     .description('Pulse amplitude'),
-  signal_quality: Joi.number().min(0).max(1).allow(null).default(null)
+  signal_quality: Joi.number().min(0).max(100).allow(null).default(null)
     .description('Signal quality (0–1)'),
   respiratory_rate: Joi.number().min(5).max(40).allow(null).default(null)
     .description('Respiratory rate (breaths/min)'),
