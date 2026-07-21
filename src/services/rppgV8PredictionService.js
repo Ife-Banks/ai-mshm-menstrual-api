@@ -160,9 +160,16 @@ async function predictMoodCheck(vector) {
         // Normal: plain [1,3] float tensor (MLP, RF, SVM, ExtraTrees, KNN)
         probs = Array.from(probsOut.data).map(Number);
       } else if (Array.isArray(probsOut) || probsOut instanceof Map) {
-        // ZipMap: LightGBM returns list containing one {classIdx: prob} map
+        // ZipMap: LightGBM returns sequence<map<int64,float>> — keys are BigInt
         const mapObj = Array.isArray(probsOut) ? probsOut[0] : probsOut;
-        probs = [0, 1, 2].map(i => Number(mapObj.get ? mapObj.get(i) : mapObj[i]) || 0);
+        if (mapObj instanceof Map) {
+          probs = [];
+          for (const [k, v] of mapObj) probs[Number(k)] = Number(v);
+        } else if (typeof mapObj === 'object' && mapObj !== null) {
+          probs = [0, 1, 2].map(i => Number(mapObj[i]) || 0);
+        } else {
+          continue;
+        }
       } else {
         continue;
       }
