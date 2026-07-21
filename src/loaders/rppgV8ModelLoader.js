@@ -5,8 +5,12 @@ const fs = require('fs');
 let v8Sessions = null;
 let v8Meta = null;
 
+// Only load RandomForest (LinearRegression skipped — each ONNX session
+// uses ~5-10MB runtime memory, and 10 LR sessions would exceed Render's
+// 512MB limit). The ensemble formula in predictRegressionAll averages
+// both outputs, so with only one algo we use its output directly.
 const TARGET_ALGOS = [
-  'LinearRegression', 'RandomForest',
+  'RandomForest',
 ];
 
 const RISK_DOMAINS = [
