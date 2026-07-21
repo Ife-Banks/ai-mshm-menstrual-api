@@ -58,13 +58,26 @@ async function loadV8Models() {
   }
 
   // ── 2. Load risk scoring models ──────────────────────────────────────────
+  // NOTE: risk regressors are 38MB each. We store file paths and lazy-load
+  // them on first predictAll call to stay under Render's 512MB limit.
+  const onnxDirRef = onnxDir;
+  loaded.risk.loadRegressor = async function (domain) {
+    if (this.regressors[domain] && this.regressors[domain] !== 'lazy') return this.regressors[domain];
+    const regPath = safePath(onnxDirRef, `risk_${domain}_regressor.onnx`);
+    if (fs.existsSync(regPath)) {
+      this.regressors[domain] = await ort.InferenceSession.create(regPath);
+      console.log(`[RppgV8ModelLoader] ✓ lazy-loaded risk/${domain}/regressor`);
+      return this.regressors[domain];
+    }
+    return null;
+  };
+
   for (const domain of RISK_DOMAINS) {
     const regPath = safePath(onnxDir, `risk_${domain}_regressor.onnx`);
     const clfPath = safePath(onnxDir, `risk_${domain}_classifier.onnx`);
 
     if (fs.existsSync(regPath)) {
-      loaded.risk.regressors[domain] = await ort.InferenceSession.create(regPath);
-      console.log(`[RppgV8ModelLoader] ✓ risk/${domain}/regressor`);
+      loaded.risk.regressors[domain] = 'lazy'; // will be created on first use
     }
     if (fs.existsSync(clfPath)) {
       loaded.risk.classifiers[domain] = await ort.InferenceSession.create(clfPath);
@@ -102,10 +115,11 @@ async function loadV8Models() {
   v8Meta = meta;
 
   const nReg = Object.values(loaded.regression).reduce((sum, t) => sum + Object.keys(t).length, 0);
-  const nRisk = Object.keys(loaded.risk.regressors).length + Object.keys(loaded.risk.classifiers).length;
+  const nRiskClf = Object.keys(loaded.risk.classifiers).length;
+  const nRiskLazy = Object.values(loaded.risk.regressors).filter(v => v === 'lazy').length;
   const nMood = Object.keys(loaded.mood).length;
   const nDl = Object.values(loaded.dl).reduce((sum, t) => sum + Object.keys(t).length, 0);
-  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nRisk} risk, ${nMood} mood, ${nDl} DL`);
+  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nRiskClf} risk/clf + ${nRiskLazy} risk/reg (lazy), ${nMood} mood, ${nDl} DL`);
 }
 
 function getV8Sessions() { return v8Sessions; }

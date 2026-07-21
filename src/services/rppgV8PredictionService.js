@@ -97,7 +97,7 @@ async function predictRiskDomain(vector, domain) {
   const scalerData = riskScalerData.scaler || riskScalerData;
   const scaled = applyScaler(rawFeatures, scalerData);
 
-  const regSess = sessions.risk.regressors[domain];
+  const regSess = await sessions.risk.loadRegressor(domain);
   const clfSess = sessions.risk.classifiers[domain];
 
   let riskScore = null;
@@ -109,6 +109,8 @@ async function predictRiskDomain(vector, domain) {
       const data = await runONNXInference(regSess, inputName, scaled);
       if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
     } catch (e) { /* skip */ }
+    // Drop reference so GC can free the ~38MB regressor
+    delete sessions.risk.regressors[domain];
   }
 
   if (clfSess) {
