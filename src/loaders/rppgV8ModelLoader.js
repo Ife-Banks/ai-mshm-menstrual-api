@@ -62,14 +62,24 @@ async function loadV8Models() {
   }
 
   // ── 2. Load risk scoring models ──────────────────────────────────────────
-  // NOTE: risk regressors are 38MB each. We store file paths and lazy-load
-  // them on first predictAll call to stay under Render's 512MB limit.
+  // NOTE: risk regressors are 38MB each. We lazy-load them with a 60s TTL
+  // so repeated predict calls don't re-read 370MB from disk, but memory is
+  // reclaimed within a minute of inactivity.
+  const REGRESSOR_TTL_MS = 60_000;
+  const loadTimes = {};
   const onnxDirRef = onnxDir;
   loaded.risk.loadRegressor = async function (domain) {
-    if (this.regressors[domain] && this.regressors[domain] !== 'lazy') return this.regressors[domain];
+    const cached = this.regressors[domain];
+    const loadedAt = loadTimes[domain];
+    if (cached && cached !== 'lazy' && loadedAt && (Date.now() - loadedAt) < REGRESSOR_TTL_MS) {
+      return cached;
+    }
+    // expired or missing — drop old reference so GC can collect
+    if (cached && cached !== 'lazy') this.regressors[domain] = 'lazy';
     const regPath = safePath(onnxDirRef, `risk_${domain}_regressor.onnx`);
     if (fs.existsSync(regPath)) {
       this.regressors[domain] = await ort.InferenceSession.create(regPath);
+      loadTimes[domain] = Date.now();
       console.log(`[RppgV8ModelLoader] ✓ lazy-loaded risk/${domain}/regressor`);
       return this.regressors[domain];
     }

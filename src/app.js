@@ -17,7 +17,7 @@ app.use(cors({
   origin: [
     'https://ai-mshm-backend.onrender.com',
     'http://localhost:8000',
-    'http://localhost:3000',
+    'http://localhost:3001',
   ],
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type', 'Accept'],

@@ -109,8 +109,7 @@ async function predictRiskDomain(vector, domain) {
       const data = await runONNXInference(regSess, inputName, scaled);
       if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
     } catch (e) { /* skip */ }
-    // Drop reference so GC can free the ~38MB regressor
-    delete sessions.risk.regressors[domain];
+    // TTL in loadRegressor handles eviction after 60s of inactivity
   }
 
   if (clfSess) {

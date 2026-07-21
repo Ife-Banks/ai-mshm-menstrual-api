@@ -69,9 +69,9 @@ async function saveV8PredictionResult(userId, predictionData) {
   for (const [domain, result] of Object.entries(risk || {})) {
     const prefix = getRiskPrefix(domain);
     if (prefix && result) {
-      data[`${prefix}RiskScore`] = result.risk_score;
-      data[`${prefix}RiskProb`] = result.risk_probability;
-      data[`${prefix}RiskFlag`] = result.risk_flag;
+      data[`${prefix}Score`] = result.risk_score;
+      data[`${prefix}Prob`] = result.risk_probability;
+      data[`${prefix}Flag`] = result.risk_flag;
       data[`${prefix}Severity`] = result.severity;
     }
   }
@@ -79,7 +79,7 @@ async function saveV8PredictionResult(userId, predictionData) {
   for (const [target, result] of Object.entries(deep_learning || {})) {
     const prefix = getDlPrefix(target);
     if (prefix && result) {
-      data[`${prefix}DlScore`] = result.ensemble;
+      data[`${prefix}Score`] = result.ensemble;
     }
   }
 

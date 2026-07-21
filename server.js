@@ -7,7 +7,7 @@ const { loadV8Models } = require('./src/loaders/rppgV8ModelLoader');
 const prisma = require('./src/db/prisma');
 const app = require('./src/app');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const MAX_MIGRATE_RETRIES = 5;
 
 async function runMigrations() {

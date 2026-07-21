@@ -73,7 +73,7 @@ const options = {
       { name: 'rPPG v8', description: 'rPPG v8 per-trial models: 10 regression targets, 10 risk domains, mood check, and deep learning.' },
     ],
     servers: [
-  { url: 'http://localhost:3000', description: 'Local development server' },
+  { url: 'http://localhost:3001', description: 'Local development server' },
   { url: 'https://ai-mshm-menstrual-api.onrender.com', description: 'Production server' },
 ],
     components: {
