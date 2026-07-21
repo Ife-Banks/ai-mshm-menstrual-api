@@ -149,15 +149,30 @@ async function predictMoodCheck(vector) {
   for (const [algo, sess] of Object.entries(sessions.mood)) {
     try {
       const inputName = sess.inputNames?.[0] || 'input';
-      const data = await runONNXInference(sess, inputName, scaled);
-      if (data) {
-        const maxIdx = data.indexOf(Math.max(...data));
-        algoResults[algo] = {
-          label: moodLabel(maxIdx),
-          confidence: parseFloat(Number(data[maxIdx]).toFixed(4)),
-          probabilities: Array.from(data).map(v => parseFloat(v.toFixed(4))),
-        };
+      const tensor = new ort.Tensor('float32', Float32Array.from(scaled), [1, scaled.length]);
+      const output = await sess.run({ [inputName]: tensor });
+
+      const probsOut = output['probabilities'];
+      if (!probsOut) continue;
+
+      let probs;
+      if (probsOut.data) {
+        // Normal: plain [1,3] float tensor (MLP, RF, SVM, ExtraTrees, KNN)
+        probs = Array.from(probsOut.data).map(Number);
+      } else if (Array.isArray(probsOut) || probsOut instanceof Map) {
+        // ZipMap: LightGBM returns list containing one {classIdx: prob} map
+        const mapObj = Array.isArray(probsOut) ? probsOut[0] : probsOut;
+        probs = [0, 1, 2].map(i => Number(mapObj.get ? mapObj.get(i) : mapObj[i]) || 0);
+      } else {
+        continue;
       }
+
+      const maxIdx = probs.indexOf(Math.max(...probs));
+      algoResults[algo] = {
+        label: moodLabel(maxIdx),
+        confidence: parseFloat(probs[maxIdx].toFixed(4)),
+        probabilities: probs.map(v => parseFloat(v.toFixed(4))),
+      };
     } catch (e) { /* skip */ }
   }
 
