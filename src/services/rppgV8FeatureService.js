@@ -34,17 +34,9 @@ const RISK_DOMAIN_FEATURES = {
 
 const MOOD_FEATURES = ['RMSSD', 'LF_HF_Ratio', 'HR_Trend', 'Skin_Temperature'];
 
-const DL_MAX_SEQ_LEN = 6;
-
 function mean(arr) {
   if (!arr.length) return 0;
   return arr.reduce((s, v) => s + v, 0) / arr.length;
-}
-
-function std(arr) {
-  if (arr.length < 2) return 0;
-  const m = mean(arr);
-  return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
 }
 
 function linregSlope(xs, ys) {
@@ -168,44 +160,11 @@ async function buildAggregatedVector(userId) {
   };
 }
 
-function buildSequenceData(sessions, targetName, maxLen = DL_MAX_SEQ_LEN) {
-  const feats = PER_TARGET_FEATURES[targetName];
-  if (!feats || !sessions.length) return null;
-
-  const nFeat = feats.length;
-  const seq = [];
-  const masks = [];
-
-  for (let i = 0; i < sessions.length; i++) {
-    const start = Math.max(0, i - maxLen + 1);
-    const window = sessions.slice(start, i + 1);
-    const t = window.length;
-    const pad = maxLen - t;
-
-    const seqRow = new Array(maxLen * nFeat).fill(0);
-    const maskRow = new Array(maxLen).fill(0);
-
-    for (let j = 0; j < t; j++) {
-      maskRow[pad + j] = 1;
-      const vec = buildUnifiedVector(window[j]);
-      for (let f = 0; f < nFeat; f++) {
-        seqRow[(pad + j) * nFeat + f] = vec[feats[f]];
-      }
-    }
-
-    seq.push(seqRow);
-    masks.push(maskRow);
-  }
-
-  return { seq, masks, seqLen: maxLen, nFeat };
-}
-
 module.exports = {
   ALL_FEATURES,
   PER_TARGET_FEATURES,
   RISK_DOMAIN_FEATURES,
   MOOD_FEATURES,
-  DL_MAX_SEQ_LEN,
   fetchV8Sessions,
   buildUnifiedVector,
   extractFeaturesForTarget,
@@ -213,6 +172,5 @@ module.exports = {
   extractMoodFeatures,
   buildLatestVector,
   buildAggregatedVector,
-  buildSequenceData,
   computeHRVStatus,
 };

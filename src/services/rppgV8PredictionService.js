@@ -1,10 +1,7 @@
 const ort = require('onnxruntime-node');
 const { getV8Sessions, getV8Metadata } = require('../loaders/rppgV8ModelLoader');
 const {
-  extractFeaturesForTarget,
-  extractFeaturesForRiskDomain,
   extractMoodFeatures,
-  buildSequenceData,
   buildUnifiedVector,
   fetchV8Sessions,
   PER_TARGET_FEATURES,
@@ -109,7 +106,6 @@ async function predictRiskDomain(vector, domain) {
       const data = await runONNXInference(regSess, inputName, scaled);
       if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
     } catch (e) { /* skip */ }
-    // TTL in loadRegressor handles eviction after 60s of inactivity
   }
 
   if (clfSess) {
@@ -157,19 +153,7 @@ async function predictMoodCheck(vector) {
 
       let probs;
       if (probsOut.data) {
-        // Normal: plain [1,3] float tensor (MLP, RF, SVM, ExtraTrees, KNN)
         probs = Array.from(probsOut.data).map(Number);
-      } else if (Array.isArray(probsOut) || probsOut instanceof Map) {
-        // ZipMap: LightGBM returns sequence<map<int64,float>> — keys are BigInt
-        const mapObj = Array.isArray(probsOut) ? probsOut[0] : probsOut;
-        if (mapObj instanceof Map) {
-          probs = [];
-          for (const [k, v] of mapObj) probs[Number(k)] = Number(v);
-        } else if (typeof mapObj === 'object' && mapObj !== null) {
-          probs = [0, 1, 2].map(i => Number(mapObj[i]) || 0);
-        } else {
-          continue;
-        }
       } else {
         continue;
       }
@@ -191,55 +175,6 @@ async function predictMoodCheck(vector) {
     best_algorithm: bestAlgo,
     all_predictions: algoResults,
     classes: moodMeta.classes || ['Low', 'Neutral', 'Positive'],
-  };
-}
-
-async function predictDL(target, vector, sessionsData) {
-  const sessions = getV8Sessions();
-  if (!sessions?.dl?.[target]) return null;
-
-  const dlModels = sessions.dl[target];
-  const meta = getV8Metadata();
-  const dlMeta = meta.dl_models?.[`${target}_lstm_attn`] || meta.dl_models?.[`${target}_transformer`];
-
-  if (!sessionsData || !sessionsData.length) return null;
-
-  const seqData = buildSequenceData(sessionsData, target);
-  if (!seqData) return null;
-
-  const lastIdx = seqData.seq.length - 1;
-  const lastSeq = new Float32Array(seqData.seq[lastIdx]);
-  const lastMask = new Float32Array(seqData.masks[lastIdx]);
-
-  const results = {};
-
-  for (const [modelType, sess] of Object.entries(dlModels)) {
-    try {
-      const seqTensor = new ort.Tensor('float32', lastSeq, [1, seqData.seqLen, seqData.nFeat]);
-      const maskTensor = new ort.Tensor('float32', lastMask, [1, seqData.seqLen]);
-      const output = await sess.run({ seq: seqTensor, mask: maskTensor });
-      const keys = Object.keys(output);
-      const rawVal = keys.length ? output[keys[0]].data[0] : null;
-
-      if (rawVal !== null && dlMeta) {
-        const yMean = dlMeta.y_mean || 0;
-        const yStd = dlMeta.y_std || 1;
-        const predicted = rawVal * yStd + yMean;
-        results[modelType] = parseFloat(predicted.toFixed(2));
-      }
-    } catch (e) {
-      results[modelType] = null;
-    }
-  }
-
-  const vals = Object.values(results).filter(v => v !== null);
-  const ensemble = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-
-  return {
-    target,
-    predictions: results,
-    ensemble: ensemble !== null ? parseFloat(ensemble.toFixed(2)) : null,
-    method: 'deep_learning',
   };
 }
 
@@ -268,16 +203,10 @@ async function predictAll(userId) {
 
   const moodResult = await predictMoodCheck(vector);
 
-  const dlResults = {};
-  for (const target of ['Sleep_Quality', 'Focus_Memory', 'Mental_Wellness', 'Mood_Score']) {
-    dlResults[target] = await predictDL(target, vector, sessionsData);
-  }
-
   return {
     regression: regressionResults,
     risk: riskResults,
     mood_check: moodResult,
-    deep_learning: dlResults,
     feature_vector: vector,
     nSessions: sessionsData.length,
   };
@@ -287,7 +216,6 @@ module.exports = {
   predictRegressionAll,
   predictRiskDomain,
   predictMoodCheck,
-  predictDL,
   predictAll,
   applyScaler,
 };

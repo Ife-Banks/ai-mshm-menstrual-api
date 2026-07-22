@@ -2,10 +2,13 @@
 # Run: python scripts/convert_rppg_v8_to_onnx.py
 # Requirements: pip install scikit-learn onnx onnxmltools onnxruntime skl2onnx numpy pandas
 #
-# Reads the .pkl bundle produced by export_v8_models.py and converts every model to ONNX.
+# Reads the individual .pkl model files produced by export_v8_models.py
+# and converts ONLY the kept models to ONNX:
+#   - LinearRegression × 10 targets
+#   - MLP classifier × 1 (Mood_Check)
+#   - RF classifier + regressor × 10 risk domains
 
 import os
-import sys
 import json
 import pickle
 import warnings
@@ -14,29 +17,25 @@ warnings.filterwarnings('ignore')
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BUNDLE_PATH = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8', 'rppg_v8_bundle.pkl')
+SK_MODELS_DIR = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8', '_sk_models')
 OUT_DIR = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8', 'onnx')
+META_PATH = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8', 'v8_training_metadata.json')
 os.makedirs(OUT_DIR, exist_ok=True)
 
-print(f"Loading bundle from {BUNDLE_PATH}...")
-with open(BUNDLE_PATH, 'rb') as f:
-    bundle = pickle.load(f)
-
-print("Converting models to ONNX format...\n")
-
-# ── Conversion helpers ─────────────────────────────────────────────────────
+with open(META_PATH, 'r') as f:
+    meta = json.load(f)
 
 def _initial_types(n_feat):
     from skl2onnx.common.data_types import FloatTensorType
     return [('input', FloatTensorType((None, n_feat)))]
 
-def convert_regression(model, n_feat, name, out_path):
+def convert_regression(model, n_feat, out_path):
     from skl2onnx import convert_sklearn
     onx = convert_sklearn(model, initial_types=_initial_types(n_feat), target_opset=16)
     with open(out_path, 'wb') as f:
         f.write(onx.SerializeToString())
 
-def convert_classifier(model, n_feat, name, out_path):
+def convert_classifier(model, n_feat, out_path):
     from skl2onnx import convert_sklearn
     onx = convert_sklearn(
         model,
@@ -47,170 +46,77 @@ def convert_classifier(model, n_feat, name, out_path):
     with open(out_path, 'wb') as f:
         f.write(onx.SerializeToString())
 
-def convert_lgbm(model, n_feat, name, out_path):
-    from onnxmltools import convert_lightgbm
-    from onnxmltools.convert.common.data_types import FloatTensorType
-    lgbm_initial_types = [('input', FloatTensorType((None, n_feat)))]
-    onx = convert_lightgbm(
-        model,
-        initial_types=lgbm_initial_types,
-        target_opset=15,
-    )
-    with open(out_path, 'wb') as f:
-        f.write(onx.SerializeToString())
-
-# Map sklearn class names to converters
-def get_converter(model):
-    cls = type(model).__name__
-    if cls == 'LGBMClassifier':
-        return convert_lgbm
-    # Classifiers that produce probability outputs
-    if cls in ('RandomForestClassifier', 'HistGradientBoostingClassifier',
-               'ExtraTreesClassifier', 'SVC', 'KNeighborsClassifier', 'MLPClassifier'):
-        return convert_classifier
-    # Regressors
-    if cls in ('LinearRegression', 'RandomForestRegressor', 'HistGradientBoostingRegressor'):
-        return convert_regression
-    return None
-
-
-# ── Convert ────────────────────────────────────────────────────────────────
 converted = []
 skipped = []
 
-def do_convert(model, n_feat, name, out_path):
+def do_convert(model, n_feat, name, out_path, kind):
     if os.path.exists(out_path):
         converted.append(out_path)
         print(f"  [EXISTS] {name}")
         return
-    converter = get_converter(model)
-    if not converter:
-        skipped.append((name, f"No converter for {type(model).__name__}"))
-        print(f"  [SKIP] {name}: No converter for {type(model).__name__}")
-        return
     try:
-        converter(model, n_feat, name, out_path)
+        if kind == 'regression':
+            convert_regression(model, n_feat, out_path)
+        else:
+            convert_classifier(model, n_feat, out_path)
         converted.append(out_path)
-        print(f"  [OK]  {name}")
+        print(f"  [OK]    {name}")
     except Exception as e:
         skipped.append((name, str(e)))
-        print(f"  [ERR] {name}: {e}")
+        print(f"  [ERR]   {name}: {e}")
 
-# 1. Regression models
+# 1. LinearRegression — all 10 targets
 print("=" * 60)
-print("Regression models")
-print("=" * 60)
-
-for target, reg_data in bundle['regression_models'].items():
-    n_feat = len(reg_data['features'])
-    for algo, model in reg_data['models'].items():
-        if algo == 'HistGradientBoosting':
-            print(f"  [SKIP] {target}_{algo}: HistGradientBoosting has ONNX TreeEnsemble node limit")
-            skipped.append((f"{target}_{algo}", "HistGradientBoosting ONNX TreeEnsemble node limit"))
-            continue
-        name = f"{target}_{algo}"
-        out_path = os.path.join(OUT_DIR, f"reg_{target}_{algo}.onnx")
-        do_convert(model, n_feat, name, out_path)
-
-# 2. Risk models
-print("\n" + "=" * 60)
-print("Risk models")
+print("LinearRegression models")
 print("=" * 60)
 
-for domain, rm in bundle['risk_models'].items():
-    n_feat = len(rm['features'])
-
-    name = f"risk_{domain}_regressor"
-    out_path = os.path.join(OUT_DIR, f"risk_{domain}_regressor.onnx")
-    do_convert(rm['regressor'], n_feat, name, out_path)
-
-    name = f"risk_{domain}_classifier"
-    out_path = os.path.join(OUT_DIR, f"risk_{domain}_classifier.onnx")
-    do_convert(rm['classifier'], n_feat, name, out_path)
-
-# 3. Mood_Check classifiers
-print("\n" + "=" * 60)
-print("Mood_Check classifiers")
-print("=" * 60)
-
-mood_data = bundle['mood_classifier']
-n_feat_mood = len(mood_data['features'])
-
-mood_clfs = mood_data.get('all_models', {})
-if not mood_clfs:
-    mood_clfs = {mood_data['name']: mood_data['model']}
-
-for algo_name, model in mood_clfs.items():
-    if algo_name == 'HistGradientBoosting':
-        print(f"  [SKIP] mood_check_{algo_name}: HistGradientBoosting has ONNX TreeEnsemble node limit")
-        skipped.append((f"mood_check_{algo_name}", "HistGradientBoosting ONNX TreeEnsemble node limit"))
+for target in meta['regression_targets']:
+    n_feat = len(meta['per_target_features'][target])
+    pkl_path = os.path.join(SK_MODELS_DIR, f'reg_{target}.pkl')
+    onnx_path = os.path.join(OUT_DIR, f'reg_{target}_LinearRegression.onnx')
+    if not os.path.exists(pkl_path):
+        print(f"  [SKIP] {target}: pkl not found")
         continue
-    name = f"mood_check_{algo_name}"
-    out_path = os.path.join(OUT_DIR, f"mood_check_{algo_name}.onnx")
-    do_convert(model, n_feat_mood, name, out_path)
+    with open(pkl_path, 'rb') as f:
+        model = pickle.load(f)
+    do_convert(model, n_feat, f'reg_{target}_LinearRegression', onnx_path, 'regression')
 
-# 4. Deep Learning models
+# 2. Risk models — RF classifier + RF regressor × 10 domains
 print("\n" + "=" * 60)
-print("Deep Learning models")
+print("Risk scoring models")
 print("=" * 60)
 
-dl_models_data = bundle.get('dl_models', {})
-if dl_models_data:
-    try:
-        import tensorflow as tf
-        import tf2onnx
+for domain in meta['risk_domains']:
+    feats = meta['risk_domain_features'][domain]['features']
+    n_feat = len(feats)
 
-        class CastMask(tf.keras.layers.Layer):
-            def call(self, m):
-                return tf.cast(tf.expand_dims(m, axis=1), tf.bool)
+    for kind, suffix in [('regressor', 'regressor'), ('classifier', 'classifier')]:
+        pkl_path = os.path.join(SK_MODELS_DIR, f'risk_{domain}_{suffix}.pkl')
+        onnx_path = os.path.join(OUT_DIR, f'risk_{domain}_{suffix}.onnx')
+        if not os.path.exists(pkl_path):
+            print(f"  [SKIP] risk_{domain}_{suffix}: pkl not found")
+            continue
+        with open(pkl_path, 'rb') as f:
+            model = pickle.load(f)
+        model_type = 'regression' if kind == 'regressor' else 'classification'
+        do_convert(model, n_feat, f'risk_{domain}_{suffix}', onnx_path, model_type)
 
-        class LastTimestep(tf.keras.layers.Layer):
-            def call(self, t):
-                return t[:, -1, :]
+# 3. Mood_Check — MLP only
+print("\n" + "=" * 60)
+print("Mood_Check classifier")
+print("=" * 60)
 
-        DL_CUSTOM_OBJECTS = {'CastMask': CastMask, 'LastTimestep': LastTimestep}
-
-        for key, dlm in dl_models_data.items():
-            out_path = os.path.join(OUT_DIR, f"dl_{key}.onnx")
-            if os.path.exists(out_path):
-                converted.append(out_path)
-                print(f"  [EXISTS] {key}")
-                continue
-
-            keras_path = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8', f"dl_{key}.keras")
-
-            if not os.path.exists(keras_path):
-                print(f"  [SKIP] {key}: .keras file not found")
-                skipped.append((f"dl_{key}", "keras file not found"))
-                continue
-
-            try:
-                model = tf.keras.models.load_model(
-                    keras_path, compile=False, safe_mode=False,
-                    custom_objects=DL_CUSTOM_OBJECTS
-                )
-
-                seq_len = dlm['seq_len']
-                n_feat = dlm['n_feat']
-                input_signature = [
-                    tf.TensorSpec(shape=[None, seq_len, n_feat], dtype=tf.float32, name='seq'),
-                    tf.TensorSpec(shape=[None, seq_len], dtype=tf.float32, name='mask'),
-                ]
-                tf2onnx.convert.from_keras(model, input_signature=input_signature, output_path=out_path, opset=16)
-                converted.append(out_path)
-                print(f"  [OK]  {key}")
-            except Exception as e:
-                skipped.append((f"dl_{key}", str(e)[:200]))
-                print(f"  [ERR] {key}: {e}")
-
-    except ImportError:
-        print("  [SKIP] TensorFlow not available")
-        for key in dl_models_data:
-            skipped.append((f"dl_{key}", "TensorFlow not installed"))
+pkl_path = os.path.join(SK_MODELS_DIR, 'mood_MLP.pkl')
+onnx_path = os.path.join(OUT_DIR, 'mood_check_MLP.onnx')
+if os.path.exists(pkl_path):
+    with open(pkl_path, 'rb') as f:
+        model = pickle.load(f)
+    n_feat = len(meta['mood_check']['features'])
+    do_convert(model, n_feat, 'mood_check_MLP', onnx_path, 'classification')
 else:
-    print("  No DL models in bundle (TensorFlow was not available during export).")
+    print("  [SKIP] mood_MLP: pkl not found")
 
-# 5. Write metadata
+# 4. Write ONNX metadata
 print("\n" + "=" * 60)
 print("Writing ONNX metadata")
 print("=" * 60)
@@ -231,11 +137,12 @@ print(f"  Output:    {OUT_DIR}")
 print(f"\n  Converted files:")
 for p in sorted(converted):
     size = os.path.getsize(p) / 1024
-    print(f"    {os.path.basename(p):50s} {size:8.1f} KB")
+    print(f"    {os.path.basename(p):55s} {size:8.1f} KB")
 
-print(f"\n  Skipped:")
-for name, reason in skipped:
-    print(f"    {name:50s} {reason}")
+if skipped:
+    print(f"\n  Skipped:")
+    for name, reason in skipped:
+        print(f"    {name:55s} {reason}")
 
 print("\n" + "=" * 60)
 print("DONE")

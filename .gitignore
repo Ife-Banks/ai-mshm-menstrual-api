@@ -15,6 +15,6 @@ node_modules/
 *.ipynb
 
 # Training/export outputs (regenerable from scripts)
+models/rppg_v8/_sk_models/
 models/rppg_v8/rppg_v8_bundle.pkl
 # v8_training_metadata.json is tracked — needed at runtime for scaler params
-models/rppg_v8/*.keras
