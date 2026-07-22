@@ -6,7 +6,7 @@
 # and converts ONLY the kept models to ONNX:
 #   - LinearRegression × 10 targets
 #   - MLP classifier × 1 (Mood_Check)
-#   - RF classifier + regressor × 10 risk domains
+#   - RF regressor × 10 risk domains
 
 import os
 import json
@@ -35,17 +35,6 @@ def convert_regression(model, n_feat, out_path):
     with open(out_path, 'wb') as f:
         f.write(onx.SerializeToString())
 
-def convert_classifier(model, n_feat, out_path):
-    from skl2onnx import convert_sklearn
-    onx = convert_sklearn(
-        model,
-        initial_types=_initial_types(n_feat),
-        target_opset=16,
-        options={id(model): {'zipmap': False}},
-    )
-    with open(out_path, 'wb') as f:
-        f.write(onx.SerializeToString())
-
 converted = []
 skipped = []
 
@@ -55,10 +44,7 @@ def do_convert(model, n_feat, name, out_path, kind):
         print(f"  [EXISTS] {name}")
         return
     try:
-        if kind == 'regression':
-            convert_regression(model, n_feat, out_path)
-        else:
-            convert_classifier(model, n_feat, out_path)
+        convert_regression(model, n_feat, out_path)
         converted.append(out_path)
         print(f"  [OK]    {name}")
     except Exception as e:
@@ -81,25 +67,22 @@ for target in meta['regression_targets']:
         model = pickle.load(f)
     do_convert(model, n_feat, f'reg_{target}_LinearRegression', onnx_path, 'regression')
 
-# 2. Risk models — RF classifier + RF regressor × 10 domains
+# 2. Risk regressors — RF regressor × 10 domains
 print("\n" + "=" * 60)
-print("Risk scoring models")
+print("Risk scoring regressors")
 print("=" * 60)
 
 for domain in meta['risk_domains']:
     feats = meta['risk_domain_features'][domain]['features']
     n_feat = len(feats)
-
-    for kind, suffix in [('regressor', 'regressor'), ('classifier', 'classifier')]:
-        pkl_path = os.path.join(SK_MODELS_DIR, f'risk_{domain}_{suffix}.pkl')
-        onnx_path = os.path.join(OUT_DIR, f'risk_{domain}_{suffix}.onnx')
-        if not os.path.exists(pkl_path):
-            print(f"  [SKIP] risk_{domain}_{suffix}: pkl not found")
-            continue
-        with open(pkl_path, 'rb') as f:
-            model = pickle.load(f)
-        model_type = 'regression' if kind == 'regressor' else 'classification'
-        do_convert(model, n_feat, f'risk_{domain}_{suffix}', onnx_path, model_type)
+    pkl_path = os.path.join(SK_MODELS_DIR, f'risk_{domain}_regressor.pkl')
+    onnx_path = os.path.join(OUT_DIR, f'risk_{domain}_regressor.onnx')
+    if not os.path.exists(pkl_path):
+        print(f"  [SKIP] risk_{domain}_regressor: pkl not found")
+        continue
+    with open(pkl_path, 'rb') as f:
+        model = pickle.load(f)
+    do_convert(model, n_feat, f'risk_{domain}_regressor', onnx_path, 'regression')
 
 # 3. Mood_Check — MLP only
 print("\n" + "=" * 60)

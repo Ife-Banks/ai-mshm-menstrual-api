@@ -5,7 +5,7 @@
 # Trains and saves ONLY the models that beat all alternatives:
 #   - LinearRegression for all 10 regression targets (R2=0.9995, best on every target)
 #   - MLP for Mood_Check classification (95.06% accuracy, best of 7 algorithms)
-#   - RandomForest classifier + regressor per risk domain (10 domains)
+#   - RandomForest regressor per risk domain (10 domains, flag derived from score)
 #
 # Produces v8_training_metadata.json with scaler params for ONNX inference.
 # Run convert_rppg_v8_to_onnx.py next to produce ONNX files.
@@ -17,10 +17,11 @@ import numpy as np
 import pandas as pd
 import json
 import os
+import pickle
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import r2_score, accuracy_score
 
@@ -33,12 +34,10 @@ DATASET_PATH = os.path.join(SCRIPT_DIR, '..', '..', 'New docs', 'AI-MSHM_HRV_rPP
 OUT_DIR = os.path.join(SCRIPT_DIR, '..', 'models', 'rppg_v8')
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ── Load dataset ────────────────────────────────────────────────────────────
 print(f"Loading dataset from {DATASET_PATH}...")
 df = pd.read_csv(DATASET_PATH)
 print(f"Dataset shape: {df.shape}")
 
-# ── Feature definitions (must match the notebook exactly) ──────────────────
 ALL_FEATURES = [
     'RMSSD', 'HF', 'LF_HF_Ratio', 'Heart_Rate', 'Heart_Rate_Variability_HRV',
     'Estimated_SpO2', 'Skin_Temperature', 'HR_Trend', 'Mean_EDA', 'Mean_Temp',
@@ -58,7 +57,6 @@ REG_FEATS = {
     'Infertility_Reproductive_Risk': ['Autonomic_Stress_Index', 'RMSSD', 'Mean_EDA'],
 }
 
-# Risk scoring domains: domain_name -> (feature_list, score_column)
 RISK_FEATS = {
     'Sleep_Quality':       (['RMSSD', 'HF', 'LF_HF_Ratio', 'Heart_Rate', 'Estimated_SpO2', 'Skin_Temperature'], 'Sleep_Quality'),
     'Focus_Memory':        (['RMSSD', 'LF_HF_Ratio', 'Heart_Rate', 'Heart_Rate_Variability_HRV'], 'Focus_Memory'),
@@ -74,28 +72,22 @@ RISK_FEATS = {
 
 MOOD_FEATS = ['RMSSD', 'LF_HF_Ratio', 'HR_Trend', 'Skin_Temperature']
 
-# ── Risk flag (RMSSD < 30 = At Risk) ──────────────────────────────────────
 df['Risk_Flag'] = df['RMSSD'].apply(lambda r: 'At Risk' if r < 30 else 'Normal')
 risk_flag_le = LabelEncoder()
-y_flag_all = risk_flag_le.fit_transform(df['Risk_Flag'])
-at_risk_idx = list(risk_flag_le.classes_).index('At Risk')
-
-# ── Split indices ───────────────────────────────────────────────────────────
-reg_splits = {}
-gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
-for target, feats in REG_FEATS.items():
-    X = df[feats].values
-    y = df[target].values
-    groups = df['Subject_ID'].values
-    tr_idx, te_idx = next(gss.split(X, y, groups=groups))
-    reg_splits[target] = (tr_idx, te_idx)
+risk_flag_le.fit(df['Risk_Flag'])
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. Train LinearRegression — all 10 targets (best on every single one)
+# 1. Train LinearRegression — all 10 targets
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print("1. Training LinearRegression (all 10 targets)")
 print("=" * 60)
+
+reg_splits = {}
+for target in REG_FEATS:
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
+    tr_idx, te_idx = next(gss.split(df[REG_FEATS[target]].values, df[target].values, groups=df['Subject_ID'].values))
+    reg_splits[target] = (tr_idx, te_idx)
 
 regression_models = {}
 scalers = {}
@@ -116,10 +108,10 @@ for target, feats in REG_FEATS.items():
     print(f"  {target:32s} R2={r2:.4f}")
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. Train risk scoring models — RF classifier + RF regressor per domain
+# 2. Train risk scoring models — RF regressor per domain
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
-print("2. Training risk scoring models (10 domains)")
+print("2. Training risk scoring regressors (10 domains)")
 print("=" * 60)
 
 risk_models = {}
@@ -127,7 +119,6 @@ risk_models = {}
 for domain, (feats, score_col) in RISK_FEATS.items():
     X = df[feats].values
     y_score = df[score_col].values
-    y_flag = y_flag_all
     groups = df['Subject_ID'].values
 
     gss_r = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
@@ -140,16 +131,11 @@ for domain, (feats, score_col) in RISK_FEATS.items():
     reg = RandomForestRegressor(n_estimators=300, random_state=RANDOM_STATE, n_jobs=1)
     reg.fit(X_tr, y_score[tr_idx])
 
-    clf = RandomForestClassifier(n_estimators=300, random_state=RANDOM_STATE, n_jobs=1)
-    clf.fit(X_tr, y_flag[tr_idx])
-
     r2 = r2_score(y_score[te_idx], reg.predict(X_te))
-    acc = accuracy_score(y_flag[te_idx], clf.predict(X_te))
-    print(f"  {domain:24s} score R2={r2:.3f} | flag acc={acc:.3f}")
+    print(f"  {domain:24s} score R2={r2:.3f}")
 
     risk_models[domain] = {
         'regressor': reg,
-        'classifier': clf,
         'features': feats,
         'score_column': score_col,
         'scaler': {'mean': scaler.mean_.tolist(), 'scale': scaler.scale_.tolist()},
@@ -176,7 +162,7 @@ mlp_acc = accuracy_score(yte_m, mlp.predict(Xte_ms))
 print(f"  MLP accuracy={mlp_acc:.4f}")
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. Save metadata JSON (no .pkl bundle — models are exported to ONNX only)
+# 4. Save metadata JSON
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n" + "=" * 60)
 print("4. Saving metadata JSON")
@@ -218,26 +204,21 @@ with open(meta_path, 'w') as f:
     json.dump(metadata, f, indent=2, default=str)
 print(f"  Saved {meta_path}")
 
-# Save serialized models as individual pickle files (lightweight, for ONNX converter only)
-import pickle
 models_dir = os.path.join(OUT_DIR, '_sk_models')
 os.makedirs(models_dir, exist_ok=True)
 
 for target, model in regression_models.items():
-    p = os.path.join(models_dir, f'reg_{target}.pkl')
-    with open(p, 'wb') as f:
+    with open(os.path.join(models_dir, f'reg_{target}.pkl'), 'wb') as f:
         pickle.dump(model, f)
 
 for domain, rm in risk_models.items():
     with open(os.path.join(models_dir, f'risk_{domain}_regressor.pkl'), 'wb') as f:
         pickle.dump(rm['regressor'], f)
-    with open(os.path.join(models_dir, f'risk_{domain}_classifier.pkl'), 'wb') as f:
-        pickle.dump(rm['classifier'], f)
 
 with open(os.path.join(models_dir, 'mood_MLP.pkl'), 'wb') as f:
     pickle.dump(mlp, f)
 
-print(f"  Saved {len(regression_models) + len(risk_models)*2 + 1} model files to {models_dir}")
+print(f"  Saved {len(regression_models) + len(risk_models) + 1} model files to {models_dir}")
 
 print("\n" + "=" * 60)
 print("DONE — run `python scripts/convert_rppg_v8_to_onnx.py` next")

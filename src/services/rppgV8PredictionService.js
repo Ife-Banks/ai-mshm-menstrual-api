@@ -95,37 +95,22 @@ async function predictRiskDomain(vector, domain) {
   const scaled = applyScaler(rawFeatures, scalerData);
 
   const regSess = await sessions.risk.loadRegressor(domain);
-  const clfSess = sessions.risk.classifiers[domain];
+  if (!regSess) return null;
 
   let riskScore = null;
-  let riskProbability = null;
+  try {
+    const inputName = regSess.inputNames?.[0] || 'input';
+    const data = await runONNXInference(regSess, inputName, scaled);
+    if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
+  } catch (e) { /* skip */ }
 
-  if (regSess) {
-    try {
-      const inputName = regSess.inputNames?.[0] || 'input';
-      const data = await runONNXInference(regSess, inputName, scaled);
-      if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
-    } catch (e) { /* skip */ }
-  }
-
-  if (clfSess) {
-    try {
-      const inputName = clfSess.inputNames?.[0] || 'input';
-      const data = await runONNXInference(clfSess, inputName, scaled);
-      if (data && data.length >= 2) {
-        riskProbability = parseFloat(Number(data[1]).toFixed(4));
-      } else if (data) {
-        riskProbability = parseFloat(Number(data[0]).toFixed(4));
-      }
-    } catch (e) { /* skip */ }
-  }
+  const clamped = riskScore !== null ? Math.min(100, Math.max(0, riskScore)) : null;
 
   return {
     domain,
-    risk_score: riskScore !== null ? Math.min(100, Math.max(0, riskScore)) : null,
-    risk_probability: riskProbability,
-    risk_flag: riskScore !== null && riskScore >= 50 ? 1 : 0,
-    severity: riskScore !== null ? severityFromScore(riskScore) : null,
+    risk_score: clamped,
+    risk_flag: clamped !== null && clamped >= 50 ? 1 : 0,
+    severity: clamped !== null ? severityFromScore(clamped) : null,
   };
 }
 

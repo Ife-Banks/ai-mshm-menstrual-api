@@ -36,7 +36,7 @@ async function loadV8Models() {
   const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
   const loaded = {
     regression: {},
-    risk: { classifiers: {}, regressors: {} },
+    risk: { regressors: {} },
     mood: {},
     metadata: meta,
   };
@@ -74,14 +74,8 @@ async function loadV8Models() {
 
   for (const domain of RISK_DOMAINS) {
     const regPath = safePath(onnxDir, `risk_${domain}_regressor.onnx`);
-    const clfPath = safePath(onnxDir, `risk_${domain}_classifier.onnx`);
-
     if (fs.existsSync(regPath)) {
       loaded.risk.regressors[domain] = 'lazy';
-    }
-    if (fs.existsSync(clfPath)) {
-      loaded.risk.classifiers[domain] = await ort.InferenceSession.create(clfPath);
-      console.log(`[RppgV8ModelLoader] risk/${domain}/classifier`);
     }
   }
 
@@ -97,10 +91,9 @@ async function loadV8Models() {
   v8Meta = meta;
 
   const nReg = Object.values(loaded.regression).reduce((sum, t) => sum + Object.keys(t).length, 0);
-  const nRiskClf = Object.keys(loaded.risk.classifiers).length;
   const nRiskLazy = Object.values(loaded.risk.regressors).filter(v => v === 'lazy').length;
   const nMood = Object.keys(loaded.mood).length;
-  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nRiskClf} risk/clf + ${nRiskLazy} risk/reg (lazy), ${nMood} mood`);
+  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nRiskLazy} risk/reg (lazy), ${nMood} mood`);
 }
 
 function getV8Sessions() { return v8Sessions; }
