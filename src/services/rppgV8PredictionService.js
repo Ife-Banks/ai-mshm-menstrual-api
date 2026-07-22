@@ -5,7 +5,6 @@ const {
   buildUnifiedVector,
   fetchV8Sessions,
   PER_TARGET_FEATURES,
-  RISK_DOMAIN_FEATURES,
   MOOD_FEATURES,
 } = require('./rppgV8FeatureService');
 
@@ -15,13 +14,6 @@ function applyScaler(features, scalerParams) {
     const s = scalerParams.scale[i] ?? 1;
     return (val - m) / s;
   });
-}
-
-function severityFromScore(score) {
-  if (score < 25) return 'Low';
-  if (score < 50) return 'Moderate';
-  if (score < 75) return 'High';
-  return 'Very High';
 }
 
 function moodLabel(idx) {
@@ -75,42 +67,6 @@ async function predictRegressionAll(vector, target) {
     target,
     predictions,
     ensemble: ensemble !== null ? parseFloat(ensemble.toFixed(2)) : null,
-  };
-}
-
-async function predictRiskDomain(vector, domain) {
-  const sessions = getV8Sessions();
-  const meta = getV8Metadata();
-  if (!sessions || !meta) return null;
-
-  const feats = RISK_DOMAIN_FEATURES[domain];
-  if (!feats) return null;
-
-  const rawFeatures = feats.map(f => vector[f]);
-
-  const riskScalerData = meta.risk_models?.[domain];
-  if (!riskScalerData) return null;
-
-  const scalerData = riskScalerData.scaler || riskScalerData;
-  const scaled = applyScaler(rawFeatures, scalerData);
-
-  const regSess = await sessions.risk.loadRegressor(domain);
-  if (!regSess) return null;
-
-  let riskScore = null;
-  try {
-    const inputName = regSess.inputNames?.[0] || 'input';
-    const data = await runONNXInference(regSess, inputName, scaled);
-    if (data) riskScore = parseFloat(Number(data[0]).toFixed(2));
-  } catch (e) { /* skip */ }
-
-  const clamped = riskScore !== null ? Math.min(100, Math.max(0, riskScore)) : null;
-
-  return {
-    domain,
-    risk_score: clamped,
-    risk_flag: clamped !== null && clamped >= 50 ? 1 : 0,
-    severity: clamped !== null ? severityFromScore(clamped) : null,
   };
 }
 
@@ -173,24 +129,17 @@ async function predictAll(userId) {
   const vector = buildUnifiedVector(last);
 
   const regressionTargets = Object.keys(PER_TARGET_FEATURES);
-  const riskDomains = Object.keys(RISK_DOMAIN_FEATURES);
 
   const regressionResults = {};
-  const riskResults = {};
 
   for (const target of regressionTargets) {
     regressionResults[target] = await predictRegressionAll(vector, target);
-  }
-
-  for (const domain of riskDomains) {
-    riskResults[domain] = await predictRiskDomain(vector, domain);
   }
 
   const moodResult = await predictMoodCheck(vector);
 
   return {
     regression: regressionResults,
-    risk: riskResults,
     mood_check: moodResult,
     feature_vector: vector,
     nSessions: sessionsData.length,
@@ -199,7 +148,6 @@ async function predictAll(userId) {
 
 module.exports = {
   predictRegressionAll,
-  predictRiskDomain,
   predictMoodCheck,
   predictAll,
   applyScaler,

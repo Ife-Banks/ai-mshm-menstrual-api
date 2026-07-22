@@ -19,19 +19,6 @@ const PER_TARGET_FEATURES = {
   Infertility_Reproductive_Risk:['Autonomic_Stress_Index', 'RMSSD', 'Mean_EDA'],
 };
 
-const RISK_DOMAIN_FEATURES = {
-  Sleep_Quality:           ['RMSSD', 'HF', 'LF_HF_Ratio', 'Heart_Rate', 'Estimated_SpO2', 'Skin_Temperature'],
-  Focus_Memory:            ['RMSSD', 'LF_HF_Ratio', 'Heart_Rate', 'Heart_Rate_Variability_HRV'],
-  Mental_Wellness:         ['RMSSD', 'LF_HF_Ratio', 'HF', 'Heart_Rate'],
-  Mood_Check:              ['RMSSD', 'LF_HF_Ratio', 'HR_Trend', 'Skin_Temperature'],
-  Metabolic_Syndrome:      ['RMSSD', 'Mean_EDA', 'Mean_Temp'],
-  Type_2_Diabetes:         ['Mean_Temp', 'RMSSD'],
-  Cardiovascular_Disease:  ['RMSSD', 'Mean_EDA'],
-  Heart_Failure:           ['RMSSD_Trend', 'Mean_Temp'],
-  Chronic_Stress:          ['Mean_EDA', 'RMSSD'],
-  Infertility:             ['Autonomic_Stress_Index', 'RMSSD', 'Mean_EDA'],
-};
-
 const MOOD_FEATURES = ['RMSSD', 'LF_HF_Ratio', 'HR_Trend', 'Skin_Temperature'];
 
 function mean(arr) {
@@ -87,12 +74,6 @@ function buildUnifiedVector(session) {
 
 function extractFeaturesForTarget(unifiedVec, targetName) {
   const feats = PER_TARGET_FEATURES[targetName];
-  if (!feats) return null;
-  return feats.map(f => unifiedVec[f]);
-}
-
-function extractFeaturesForRiskDomain(unifiedVec, domain) {
-  const feats = RISK_DOMAIN_FEATURES[domain];
   if (!feats) return null;
   return feats.map(f => unifiedVec[f]);
 }
@@ -163,12 +144,10 @@ async function buildAggregatedVector(userId) {
 module.exports = {
   ALL_FEATURES,
   PER_TARGET_FEATURES,
-  RISK_DOMAIN_FEATURES,
   MOOD_FEATURES,
   fetchV8Sessions,
   buildUnifiedVector,
   extractFeaturesForTarget,
-  extractFeaturesForRiskDomain,
   extractMoodFeatures,
   buildLatestVector,
   buildAggregatedVector,

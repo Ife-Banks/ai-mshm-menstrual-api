@@ -9,12 +9,6 @@ const TARGET_ALGOS = [
   'LinearRegression',
 ];
 
-const RISK_DOMAINS = [
-  'Sleep_Quality', 'Focus_Memory', 'Mental_Wellness', 'Mood_Check',
-  'Metabolic_Syndrome', 'Type_2_Diabetes', 'Cardiovascular_Disease',
-  'Heart_Failure', 'Chronic_Stress', 'Infertility',
-];
-
 const MOOD_ALGOS = [
   'MLP',
 ];
@@ -36,7 +30,6 @@ async function loadV8Models() {
   const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
   const loaded = {
     regression: {},
-    risk: { regressors: {} },
     mood: {},
     metadata: meta,
   };
@@ -52,33 +45,6 @@ async function loadV8Models() {
     }
   }
 
-  const REGRESSOR_TTL_MS = 60_000;
-  const loadTimes = {};
-  const onnxDirRef = onnxDir;
-  loaded.risk.loadRegressor = async function (domain) {
-    const cached = this.regressors[domain];
-    const loadedAt = loadTimes[domain];
-    if (cached && cached !== 'lazy' && loadedAt && (Date.now() - loadedAt) < REGRESSOR_TTL_MS) {
-      return cached;
-    }
-    if (cached && cached !== 'lazy') this.regressors[domain] = 'lazy';
-    const regPath = safePath(onnxDirRef, `risk_${domain}_regressor.onnx`);
-    if (fs.existsSync(regPath)) {
-      this.regressors[domain] = await ort.InferenceSession.create(regPath);
-      loadTimes[domain] = Date.now();
-      console.log(`[RppgV8ModelLoader] lazy-loaded risk/${domain}/regressor`);
-      return this.regressors[domain];
-    }
-    return null;
-  };
-
-  for (const domain of RISK_DOMAINS) {
-    const regPath = safePath(onnxDir, `risk_${domain}_regressor.onnx`);
-    if (fs.existsSync(regPath)) {
-      loaded.risk.regressors[domain] = 'lazy';
-    }
-  }
-
   for (const algo of MOOD_ALGOS) {
     const onnxPath = safePath(onnxDir, `mood_check_${algo}.onnx`);
     if (fs.existsSync(onnxPath)) {
@@ -91,9 +57,8 @@ async function loadV8Models() {
   v8Meta = meta;
 
   const nReg = Object.values(loaded.regression).reduce((sum, t) => sum + Object.keys(t).length, 0);
-  const nRiskLazy = Object.values(loaded.risk.regressors).filter(v => v === 'lazy').length;
   const nMood = Object.keys(loaded.mood).length;
-  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nRiskLazy} risk/reg (lazy), ${nMood} mood`);
+  console.log(`[RppgV8ModelLoader] All v8 models ready — ${nReg} regression, ${nMood} mood`);
 }
 
 function getV8Sessions() { return v8Sessions; }
