@@ -75,7 +75,7 @@ async function predictMoodCheck(vector) {
   const meta = getV8Metadata();
   if (!sessions || !meta) return null;
 
-  const moodMeta = meta.mood_classifier;
+  const moodMeta = meta.mood_check;
   if (!moodMeta) return null;
 
   const rawFeatures = extractMoodFeatures(vector);

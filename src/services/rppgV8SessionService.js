@@ -49,7 +49,7 @@ async function getV8PredictionHistory(userId, limit = 20) {
 }
 
 async function saveV8PredictionResult(userId, predictionData) {
-  const { regression, risk, mood_check, deep_learning, nSessions } = predictionData;
+  const { regression, mood_check, nSessions } = predictionData;
 
   const data = {
     userId,
@@ -61,23 +61,6 @@ async function saveV8PredictionResult(userId, predictionData) {
 
   for (const [target, result] of Object.entries(regression || {})) {
     const prefix = getTargetPrefix(target);
-    if (prefix && result) {
-      data[`${prefix}Score`] = result.ensemble;
-    }
-  }
-
-  for (const [domain, result] of Object.entries(risk || {})) {
-    const prefix = getRiskPrefix(domain);
-    if (prefix && result) {
-      data[`${prefix}Score`] = result.risk_score;
-      data[`${prefix}Prob`] = result.risk_probability;
-      data[`${prefix}Flag`] = result.risk_flag;
-      data[`${prefix}Severity`] = result.severity;
-    }
-  }
-
-  for (const [target, result] of Object.entries(deep_learning || {})) {
-    const prefix = getDlPrefix(target);
     if (prefix && result) {
       data[`${prefix}Score`] = result.ensemble;
     }
@@ -98,32 +81,6 @@ function getTargetPrefix(target) {
     Heart_Failure_Alert_Score: 'heartFailure',
     Chronic_Stress_Severity: 'chronicStress',
     Infertility_Reproductive_Risk: 'infertility',
-  };
-  return map[target] || null;
-}
-
-function getRiskPrefix(domain) {
-  const map = {
-    Sleep_Quality: 'riskSleepQuality',
-    Focus_Memory: 'riskFocusMemory',
-    Mental_Wellness: 'riskMentalWellness',
-    Mood_Check: 'riskMoodCheck',
-    Metabolic_Syndrome: 'riskMetabolic',
-    Type_2_Diabetes: 'riskT2d',
-    Cardiovascular_Disease: 'riskCvd',
-    Heart_Failure: 'riskHeartFailure',
-    Chronic_Stress: 'riskChronicStress',
-    Infertility: 'riskInfertility',
-  };
-  return map[domain] || null;
-}
-
-function getDlPrefix(target) {
-  const map = {
-    Sleep_Quality: 'dlSleepQuality',
-    Focus_Memory: 'dlFocusMemory',
-    Mental_Wellness: 'dlMentalWellness',
-    Mood_Score: 'dlMoodScore',
   };
   return map[target] || null;
 }
