@@ -9,7 +9,7 @@ const { getV8Sessions, getV8Metadata } = require('../loaders/rppgV8ModelLoader')
 const router = express.Router();
 
 const v8SessionSchema = Joi.object({
-  rmssd: Joi.number().min(1).max(1000).required(),
+  rmssd: Joi.number().min(0).max(1000).required(),
   hf: Joi.number().min(0).max(5000).required(),
   lf_hf_ratio: Joi.number().min(0).max(20).required(),
   heart_rate: Joi.number().min(30).max(200).required(),
