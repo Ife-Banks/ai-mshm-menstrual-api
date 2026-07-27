@@ -13,7 +13,7 @@ const v8SessionSchema = Joi.object({
   hf: Joi.number().min(0).max(5000).required(),
   lf_hf_ratio: Joi.number().min(0).max(20).required(),
   heart_rate: Joi.number().min(30).max(200).required(),
-  hrv: Joi.number().min(0).max(500).required(),
+  hrv: Joi.number().min(0).max(1000).required(),
   estimated_spo2: Joi.number().min(80).max(100).required(),
   skin_temperature: Joi.number().min(25).max(42).required(),
   hr_trend: Joi.number().min(-10).max(10).allow(null).default(null),
