@@ -25,7 +25,7 @@ const DISEASE_GROUPS = {
 
 // Minimum data requirements per prediction type
 const MIN_REQUIREMENTS = {
-  metabolic_cardio: { minSessions: 3, minSpanDays: 30 },
+  metabolic_cardio: { minSessions: 3, minSpanDays: 7 },
   stress_reproductive: { minSessions: 3, minSpanDays: 7 },
   anomaly: { minSessions: 1, minSpanDays: 0 },
 };
