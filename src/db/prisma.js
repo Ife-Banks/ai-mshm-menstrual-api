@@ -5,11 +5,14 @@ require('dotenv').config();
 // Adjust these based on your PostgreSQL max_connections and expected load
 // For Neon (pgbouncer), also set NEON_DB_POOL_TIMEOUT in .env (default: 60s)
 // to prevent pgbouncer from closing idle connections
+// NOTE: these are reporting values only. Prisma's PrismaClient constructor
+// rejects unknown options such as `min`/`max` (PrismaClientConstructorValidationError),
+// so they must never be spread into `new PrismaClient({...})`. Prisma sizes its
+// own pool — tune it from the connection string instead, e.g.
+// DATABASE_URL="...?connection_limit=10&pool_timeout=20".
 const poolConfig = {
   min: 2,                  // Minimum connections kept alive
   max: 10,                 // Maximum connections in pool - keeps pgbouncer load low
-  // @ts-ignore - prisma accepts extra options
-  // timeout: process.env.NODE_ENV === 'production' ? 30000 : 5000, // Query timeout in ms
 };
 // NEON_DB_POOL_TIMEOUT=60 (in .env) sets pgbouncer stale connection timeout
 // If using Neon, ensure this matches or exceeds your app's minimum session duration
@@ -18,7 +21,6 @@ try {
   const prisma = global.prisma || new PrismaClient({
     datasourceUrl: process.env.DATABASE_URL,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-    ...poolConfig,
   });
 
   // Prevent multiple PrismaClient instances in development
@@ -78,7 +80,7 @@ module.exports.getConnectionStats = () => ({
   console.error('[Prisma] Initialization failed:', initError.message);
   // Fallback: create minimal client for health check only
   const fallbackPrisma = new PrismaClient({
-    connectionString: process.env.DATABASE_URL,
+    datasourceUrl: process.env.DATABASE_URL,
     log: ['error'],
   });
   module.exports = fallbackPrisma;
