@@ -518,8 +518,9 @@ router.post('/predict/mental-health', auth, resolveUser, async (req, res, next) 
     if (logs.length < 3) {
       return res.status(422).json({
         success: false, status: 422,
-        message: 'Minimum 3 daily logs required',
-        errors: [{ field: 'logs', message: `Only ${logs.length} logs found.` }],
+        message: 'Insufficient mood log data for reliable prediction',
+        warnings: ['Only ' + logs.length + ' mood log(s) found (minimum 3 recommended)', 'Prediction computed with available data - results may be less accurate'],
+        errors: [{ field: 'logs', message: 'Only ' + logs.length + ' logs found. Log at least 3 mood checks for reliable predictions.' }],
         meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
       });
     }
@@ -564,9 +565,34 @@ router.post('/predict/metabolic', auth, resolveUser, async (req, res, next) => {
       where: { userId: req.dbUser.id },
       orderBy: { logDate: 'asc' },
     });
-    if (logs.length < 3) {
-      return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
+    const minLogsRequired = 3;
+    const hasEnoughLogs = logs.length >= minLogsRequired;
+
+    if (!hasEnoughLogs) {
+      // Attempt prediction with available logs, but warn user
+      const featureVector = await buildFeatureVector(req.dbUser.id);
+      const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.metabolic);
+      await saveMoodPrediction(req.dbUser.id, 'metabolic', predictions, logs.length);
+
+      return res.status(422).json({
+        success: false,
+        status: 422,
+        message: 'Insufficient mood log data for reliable prediction',
+        warnings: ['Only ' + logs.length + ' mood log(s) found (minimum 3 recommended)', 'Prediction computed with available data - results may be less accurate'],
+        errors: [{ field: 'logs', message: 'Only ' + logs.length + ' logs found. Log at least 3 mood checks for reliable predictions.' }],
+        meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
+        data: {
+          group: 'metabolic',
+          diseases_assessed: DISEASE_GROUPS.metabolic,
+          logs_used: logs.length,
+          highest_risk: findHighestRisk(predictions),
+          any_flag_raised: anyFlagRaised(predictions),
+          predictions,
+          insufficient_data: true,
+        },
+      });
     }
+
     const featureVector = await buildFeatureVector(req.dbUser.id);
     const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.metabolic);
     await saveMoodPrediction(req.dbUser.id, 'metabolic', predictions, logs.length);
@@ -595,9 +621,34 @@ router.post('/predict/cardio-neuro', auth, resolveUser, async (req, res, next) =
       where: { userId: req.dbUser.id },
       orderBy: { logDate: 'asc' },
     });
-    if (logs.length < 3) {
-      return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
+    const minLogsRequired = 3;
+    const hasEnoughLogs = logs.length >= minLogsRequired;
+
+    if (!hasEnoughLogs) {
+      // Attempt prediction with available logs, but warn user
+      const featureVector = await buildFeatureVector(req.dbUser.id);
+      const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.cardio_neuro);
+      await saveMoodPrediction(req.dbUser.id, 'cardio_neuro', predictions, logs.length);
+
+      return res.status(422).json({
+        success: false,
+        status: 422,
+        message: 'Insufficient mood log data for reliable prediction',
+        warnings: ['Only ' + logs.length + ' mood log(s) found (minimum 3 recommended)', 'Prediction computed with available data - results may be less accurate'],
+        errors: [{ field: 'logs', message: 'Only ' + logs.length + ' logs found. Log at least 3 mood checks for reliable predictions.' }],
+        meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
+        data: {
+          group: 'cardio_neuro',
+          diseases_assessed: DISEASE_GROUPS.cardio_neuro,
+          logs_used: logs.length,
+          highest_risk: findHighestRisk(predictions),
+          any_flag_raised: anyFlagRaised(predictions),
+          predictions,
+          insufficient_data: true,
+        },
+      });
     }
+
     const featureVector = await buildFeatureVector(req.dbUser.id);
     const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.cardio_neuro);
     await saveMoodPrediction(req.dbUser.id, 'cardio_neuro', predictions, logs.length);
@@ -626,9 +677,34 @@ router.post('/predict/reproductive', auth, resolveUser, async (req, res, next) =
       where: { userId: req.dbUser.id },
       orderBy: { logDate: 'asc' },
     });
-    if (logs.length < 3) {
-      return res.status(422).json({ success: false, status: 422, message: 'Minimum 3 logs required', meta: { request_id: req.requestId, timestamp: new Date().toISOString() } });
+    const minLogsRequired = 3;
+    const hasEnoughLogs = logs.length >= minLogsRequired;
+
+    if (!hasEnoughLogs) {
+      // Attempt prediction with available logs, but warn user
+      const featureVector = await buildFeatureVector(req.dbUser.id);
+      const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.reproductive);
+      await saveMoodPrediction(req.dbUser.id, 'reproductive', predictions, logs.length);
+
+      return res.status(422).json({
+        success: false,
+        status: 422,
+        message: 'Insufficient mood log data for reliable prediction',
+        warnings: ['Only ' + logs.length + ' mood log(s) found (minimum 3 recommended)', 'Prediction computed with available data - results may be less accurate'],
+        errors: [{ field: 'logs', message: 'Only ' + logs.length + ' logs found. Log at least 3 mood checks for reliable predictions.' }],
+        meta: { request_id: req.requestId, timestamp: new Date().toISOString() },
+        data: {
+          group: 'reproductive',
+          diseases_assessed: DISEASE_GROUPS.reproductive,
+          logs_used: logs.length,
+          highest_risk: findHighestRisk(predictions),
+          any_flag_raised: anyFlagRaised(predictions),
+          predictions,
+          insufficient_data: true,
+        },
+      });
     }
+
     const featureVector = await buildFeatureVector(req.dbUser.id);
     const predictions = await runDiseasePredictions(featureVector, DISEASE_GROUPS.reproductive);
     await saveMoodPrediction(req.dbUser.id, 'reproductive', predictions, logs.length);
