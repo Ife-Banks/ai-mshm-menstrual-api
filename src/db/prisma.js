@@ -16,7 +16,7 @@ const poolConfig = {
 
 try {
   const prisma = global.prisma || new PrismaClient({
-    connectionString: process.env.DATABASE_URL,
+    datasourceUrl: process.env.DATABASE_URL,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     ...poolConfig,
   });
