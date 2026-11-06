@@ -14,7 +14,17 @@ const DISEASE_GROUPS = {
   reproductive: ['Infertility_Mood']
 };
 
+// Debounce: skip retriggering full inference if one ran for this user recently
+// (users fill PHQ-4/Affect/Focus/Sleep as separate screens — each fires this).
+const MOOD_PREDICT_MIN_INTERVAL_MS = 60 * 1000;
+const lastMoodPredictRun = new Map();
+
 async function triggerMoodPredictions(userId) {
+  const now = Date.now();
+  const lastRun = lastMoodPredictRun.get(userId) || 0;
+  if (now - lastRun < MOOD_PREDICT_MIN_INTERVAL_MS) return;
+  lastMoodPredictRun.set(userId, now);
+
   const logs = await getAllUserLogs(userId);
   if (logs.length < 3) return;
 

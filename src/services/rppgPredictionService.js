@@ -59,6 +59,67 @@ const FIELD_PREFIX = {
   Infertility: 'infertility',
 };
 
+// Minimum data requirements per prediction type
+const MIN_REQUIREMENTS = {
+  metabolic_cardio: { minSessions: 3, minSpanDays: 7 },
+  stress_reproductive: { minSessions: 3, minSpanDays: 7 },
+  anomaly: { minSessions: 1, minSpanDays: 0 },
+};
+
+function buildReliability(clinicalFlags, nSessions, diseaseGroup) {
+  const req = MIN_REQUIREMENTS[diseaseGroup] || { minSessions: 1, minSpanDays: 0 };
+  const sessionsMet = nSessions >= req.minSessions;
+  const spanMet = (clinicalFlags.SpanDays || 0) >= req.minSpanDays;
+  let dataQuality;
+  if (diseaseGroup === 'metabolic_cardio') {
+    dataQuality = sessionsMet && spanMet && clinicalFlags.RMSSD_Declining_Flag === 1 ? 'good' : 'insufficient';
+  } else {
+    dataQuality = sessionsMet && spanMet ? 'good' : 'insufficient';
+  }
+  return {
+    sessions_used: nSessions,
+    days_span: clinicalFlags.SpanDays || 0,
+    sessions_required: req.minSessions,
+    days_required: req.minSpanDays,
+    has_declining_rmssd_trend: clinicalFlags.RMSSD_Declining_Flag === 1,
+    rmssd_slope: clinicalFlags.RMSSD_Slope || 0,
+    data_quality: dataQuality,
+    disclaimer: 'Predictions are based on HRV-biometric models. Not a clinical diagnosis.',
+  };
+}
+
+function buildPredictionResponse({
+  message,
+  group,
+  diseases,
+  featureSnapshot,
+  clinicalFlags,
+  predictions,
+  sessionsUsed,
+  requestId,
+}) {
+  const anyFlag = Object.values(predictions).some(d => d.risk_flag === 1);
+  return {
+    success: true,
+    status: 200,
+    message,
+    data: {
+      group,
+      diseases_assessed: diseases,
+      sessions_used: sessionsUsed,
+      any_flag_raised: anyFlag,
+      feature_snapshot: featureSnapshot,
+      clinical_flags: clinicalFlags,
+      predictions,
+      reliability: buildReliability(clinicalFlags, sessionsUsed, group),
+    },
+    meta: {
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 // HeartFailure had only 2 positive samples in the 529-subject training set
 const UNRELIABLE_DISEASES = new Set(['HeartFailure']);
 
@@ -182,7 +243,7 @@ async function runRppgPredictions(featureVector, diseaseList) {
 
   const results = {};
 
-  for (const disease of diseaseList) {
+  await Promise.all(diseaseList.map(async (disease) => {
     const clf = sessions.classifiers[disease];
     const reg = sessions.regressors[disease];
 
@@ -195,19 +256,21 @@ async function runRppgPredictions(featureVector, diseaseList) {
         threshold_used: meta.flag_thresholds?.[disease] ?? null,
         reliability_warning: null,
       };
-      continue;
+      return;
     }
 
     try {
-      const clfOut = Object.values(await clf.run({ float_input: tensor }));
-      const regOut = Object.values(await reg.run({ float_input: tensor }));
+      const [clfOut, regOut] = await Promise.all([
+        clf.run({ float_input: tensor }),
+        reg.run({ float_input: tensor }),
+      ]);
 
-      const probData = clfOut[0]?.data ?? [];
+      const probData = Object.values(clfOut)[0]?.data ?? [];
       const riskProbability = probData.length >= 2
         ? parseFloat(Number(probData[1]).toFixed(4))
         : parseFloat(Number(probData[0] ?? 0).toFixed(4));
 
-      const rawScore = parseFloat(Number(regOut[0]?.data[0] ?? 0).toFixed(4));
+      const rawScore = parseFloat(Number(Object.values(regOut)[0]?.data[0] ?? 0).toFixed(4));
       const riskScore = Math.min(1, Math.max(0, rawScore));
 
       const threshold = meta.flag_thresholds?.[disease] ?? 0.4;
@@ -239,7 +302,7 @@ async function runRppgPredictions(featureVector, diseaseList) {
         reliability_warning: `Model error: ${err.message}`,
       };
     }
-  }
+  }));
 
   return results;
 }
@@ -325,5 +388,8 @@ module.exports = {
   runAnomalyDetection,
   saveRppgPredictionResult,
   applyScaler,
+  buildReliability,
+  buildPredictionResponse,
+  MIN_REQUIREMENTS,
   DISEASE_FIELD_PREFIX: FIELD_PREFIX,
 };

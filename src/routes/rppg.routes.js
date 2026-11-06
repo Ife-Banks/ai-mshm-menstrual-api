@@ -13,6 +13,8 @@ const {
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  buildPredictionResponse,
+  MIN_REQUIREMENTS,
   DISEASE_FIELD_PREFIX,
 } = require('../services/rppgPredictionService');
 
@@ -21,13 +23,6 @@ const router = express.Router();
 const DISEASE_GROUPS = {
   metabolic_cardio: ['CVD', 'T2D', 'Metabolic', 'HeartFailure'],
   stress_reproductive: ['Stress', 'Infertility'],
-};
-
-// Minimum data requirements per prediction type
-const MIN_REQUIREMENTS = {
-  metabolic_cardio: { minSessions: 3, minSpanDays: 7 },
-  stress_reproductive: { minSessions: 3, minSpanDays: 7 },
-  anomaly: { minSessions: 1, minSpanDays: 0 },
 };
 
 const rppgSessionSchema = Joi.object({
@@ -67,60 +62,6 @@ function validate(schema) {
     }
     req.body = value;
     next();
-  };
-}
-
-function buildReliability(clinicalFlags, nSessions, diseaseGroup) {
-  const req = MIN_REQUIREMENTS[diseaseGroup] || { minSessions: 1, minSpanDays: 0 };
-  const sessionsMet = nSessions >= req.minSessions;
-  const spanMet = (clinicalFlags.SpanDays || 0) >= req.minSpanDays;
-  let dataQuality;
-  if (diseaseGroup === 'metabolic_cardio') {
-    dataQuality = sessionsMet && spanMet && clinicalFlags.RMSSD_Declining_Flag === 1 ? 'good' : 'insufficient';
-  } else {
-    dataQuality = sessionsMet && spanMet ? 'good' : 'insufficient';
-  }
-  return {
-    sessions_used: nSessions,
-    days_span: clinicalFlags.SpanDays || 0,
-    sessions_required: req.minSessions,
-    days_required: req.minSpanDays,
-    has_declining_rmssd_trend: clinicalFlags.RMSSD_Declining_Flag === 1,
-    rmssd_slope: clinicalFlags.RMSSD_Slope || 0,
-    data_quality: dataQuality,
-    disclaimer: 'Predictions are based on HRV-biometric models. Not a clinical diagnosis.',
-  };
-}
-
-function buildPredictionResponse({
-  message,
-  group,
-  diseases,
-  featureSnapshot,
-  clinicalFlags,
-  predictions,
-  sessionsUsed,
-  requestId,
-}) {
-  const anyFlag = Object.values(predictions).some(d => d.risk_flag === 1);
-  return {
-    success: true,
-    status: 200,
-    message,
-    data: {
-      group,
-      diseases_assessed: diseases,
-      sessions_used: sessionsUsed,
-      any_flag_raised: anyFlag,
-      feature_snapshot: featureSnapshot,
-      clinical_flags: clinicalFlags,
-      predictions,
-      reliability: buildReliability(clinicalFlags, sessionsUsed, group),
-    },
-    meta: {
-      request_id: requestId,
-      timestamp: new Date().toISOString(),
-    },
   };
 }
 

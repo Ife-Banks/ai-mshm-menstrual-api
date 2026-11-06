@@ -168,15 +168,19 @@ async function runDiseasePredictions(featureVector, diseaseList) {
     [1, featureVector.length]
   );
 
-  for (const disease of diseaseList) {
+  await Promise.all(diseaseList.map(async (disease) => {
     try {
-      if (!sessions.classifiers[disease]) continue;
-      
+      if (!sessions.classifiers[disease]) return;
+
       const clf = sessions.classifiers[disease];
       const reg = sessions.regressors[disease];
 
-      const [clfOut] = Object.values(await clf.run({ float_input: tensor }));
-      const [regOut] = Object.values(await reg.run({ float_input: tensor }));
+      const [clfResult, regResult] = await Promise.all([
+        clf.run({ float_input: tensor }),
+        reg.run({ float_input: tensor }),
+      ]);
+      const clfOut = Object.values(clfResult)[0];
+      const regOut = Object.values(regResult)[0];
 
       const probData = clfOut.data;
       const risk_probability = probData.length >= 2
@@ -205,7 +209,7 @@ async function runDiseasePredictions(featureVector, diseaseList) {
     } catch (err) {
       console.warn(`[MoodPrediction] ${disease} inference failed: ${err.message}`);
     }
-  }
+  }));
 
   return results;
 }
