@@ -358,7 +358,8 @@ router.post('/predict/anomaly', auth, resolveUser, async (req, res, next) => {
  */
 router.get('/sessions', auth, resolveUser, async (req, res, next) => {
   try {
-    const sessions = await getSessionHistory(req.dbUser.id);
+    const limit = parseInt(req.query.limit) || 30;
+    const sessions = await getSessionHistory(req.dbUser.id, Math.min(limit, 100));
     res.json({
       success: true,
       status: 200,
