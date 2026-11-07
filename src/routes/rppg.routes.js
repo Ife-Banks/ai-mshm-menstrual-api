@@ -13,6 +13,7 @@ const {
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  saveRppgPredictionsBatch,
   runRppgAllPredictions,
   buildPredictionResponse,
   MIN_REQUIREMENTS,

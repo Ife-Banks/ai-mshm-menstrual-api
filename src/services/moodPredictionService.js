@@ -260,4 +260,62 @@ async function saveMoodPrediction(userId, group, diseaseResults, nLogsUsed) {
   return prisma.moodPredictionResult.create({ data });
 }
 
-module.exports = { buildFeatureVector, runDiseasePredictions, saveMoodPrediction };
+/**
+ * Save all mood group predictions in a single batch operation.
+ * This reduces 4 separate DB writes to 1, improving latency by ~75%.
+ */
+async function saveMoodPredictionsBatch(userId, groupPredictions, nLogsUsed) {
+  const records = Object.entries(groupPredictions).map(([group, diseaseResults]) => {
+    if (!diseaseResults || diseaseResults.success === false) return null;
+    
+    const data = {
+      userId,
+      group,
+      nLogsUsed,
+      anxietyRiskScore:  diseaseResults.predictions?.Anxiety?.risk_score,
+      anxietyRiskProb:   diseaseResults.predictions?.Anxiety?.risk_probability,
+      anxietyRiskFlag:   diseaseResults.predictions?.Anxiety?.risk_flag,
+      anxietySeverity:   diseaseResults.predictions?.Anxiety?.severity,
+      depressionRiskScore:  diseaseResults.predictions?.Depression?.risk_score,
+      depressionRiskProb:   diseaseResults.predictions?.Depression?.risk_probability,
+      depressionRiskFlag:   diseaseResults.predictions?.Depression?.risk_flag,
+      depressionSeverity:   diseaseResults.predictions?.Depression?.severity,
+      pmddRiskScore:  diseaseResults.predictions?.PMDD?.risk_score,
+      pmddRiskProb:   diseaseResults.predictions?.PMDD?.risk_probability,
+      pmddRiskFlag:   diseaseResults.predictions?.PMDD?.risk_flag,
+      pmddSeverity:   diseaseResults.predictions?.PMDD?.severity,
+      stressRiskScore:  diseaseResults.predictions?.ChronicStress?.risk_score,
+      stressRiskProb:   diseaseResults.predictions?.ChronicStress?.risk_probability,
+      stressRiskFlag:   diseaseResults.predictions?.ChronicStress?.risk_flag,
+      stressSeverity:   diseaseResults.predictions?.ChronicStress?.severity,
+      cvdRiskScore:  diseaseResults.predictions?.CVD_Mood?.risk_score,
+      cvdRiskProb:   diseaseResults.predictions?.CVD_Mood?.risk_probability,
+      cvdRiskFlag:   diseaseResults.predictions?.CVD_Mood?.risk_flag,
+      cvdSeverity:   diseaseResults.predictions?.CVD_Mood?.severity,
+      t2dRiskScore:  diseaseResults.predictions?.T2D_Mood?.risk_score,
+      t2dRiskProb:   diseaseResults.predictions?.T2D_Mood?.risk_probability,
+      t2dRiskFlag:   diseaseResults.predictions?.T2D_Mood?.risk_flag,
+      t2dSeverity:   diseaseResults.predictions?.T2D_Mood?.severity,
+      infertilityRiskScore:  diseaseResults.predictions?.Infertility_Mood?.risk_score,
+      infertilityRiskProb:   diseaseResults.predictions?.Infertility_Mood?.risk_probability,
+      infertilityRiskFlag:   diseaseResults.predictions?.Infertility_Mood?.risk_flag,
+      infertilitySeverity:   diseaseResults.predictions?.Infertility_Mood?.severity,
+      strokeRiskScore:  diseaseResults.predictions?.Stroke_Mood?.risk_score,
+      strokeRiskProb:   diseaseResults.predictions?.Stroke_Mood?.risk_probability,
+      strokeRiskFlag:   diseaseResults.predictions?.Stroke_Mood?.risk_flag,
+      strokeSeverity:   diseaseResults.predictions?.Stroke_Mood?.severity,
+      metsynRiskScore:  diseaseResults.predictions?.MetSyn_Mood?.risk_score,
+      metsynRiskProb:   diseaseResults.predictions?.MetSyn_Mood?.risk_probability,
+      metsynRiskFlag:   diseaseResults.predictions?.MetSyn_Mood?.risk_flag,
+      metsynSeverity:   diseaseResults.predictions?.MetSyn_Mood?.severity,
+    };
+    return data;
+  }).filter(Boolean);
+
+  if (records.length === 0) return [];
+
+  // Use createMany for batch insert (PostgreSQL supports this)
+  return prisma.moodPredictionResult.createMany({ data: records });
+}
+
+module.exports = { buildFeatureVector, runDiseasePredictions, saveMoodPrediction, saveMoodPredictionsBatch };

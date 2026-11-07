@@ -10,11 +10,13 @@ const {
   buildFeatureVector: buildMoodFeatureVector,
   runDiseasePredictions,
   saveMoodPrediction,
+  saveMoodPredictionsBatch,
 } = require('../services/moodPredictionService');
 const {
   buildRppgFeatureVector,
   runRppgPredictions,
   saveRppgPredictionResult,
+  saveRppgPredictionsBatch,
   buildPredictionResponse,
   MIN_REQUIREMENTS,
 } = require('../services/rppgPredictionService');
@@ -140,15 +142,7 @@ async function runRppgGroup(userId, group, vectorData, requestId) {
     }
   }
 
-  await saveRppgPredictionResult({
-    userId,
-    group,
-    featureSnapshot,
-    clinicalFlags,
-    predictions,
-    sessions,
-    nSessions,
-  });
+  // Don't save here - will be batched in runRppgAll
 
   const payload = buildPredictionResponse({
     message: `${group} rPPG risk scores computed`,
@@ -161,7 +155,7 @@ async function runRppgGroup(userId, group, vectorData, requestId) {
     requestId,
   });
 
-  return { success: true, data: payload.data };
+  return { success: true, data: payload.data, _predictions: predictions };
 }
 
 async function runRppgAll(userId, requestId) {
@@ -178,9 +172,29 @@ async function runRppgAll(userId, requestId) {
     ])
   );
 
+  // Batch save both groups in one DB operation
+  const { featureSnapshot, clinicalFlags, nSessions, sessions } = vectorData;
+  const groupPredictions = {};
+  if (metabolicCardio._predictions) {
+    groupPredictions.metabolic_cardio = metabolicCardio._predictions;
+  }
+  if (stressReproductive._predictions) {
+    groupPredictions.stress_reproductive = stressReproductive._predictions;
+  }
+  
+  await timed('rppg.save_batch', () => 
+    saveRppgPredictionsBatch(userId, groupPredictions, featureSnapshot, clinicalFlags, sessions, nSessions)
+  );
+
+  // Remove internal _predictions field from response
+  const cleanMetabolic = { ...metabolicCardio };
+  const cleanStress = { ...stressReproductive };
+  delete cleanMetabolic._predictions;
+  delete cleanStress._predictions;
+
   return {
-    metabolic_cardio: metabolicCardio,
-    stress_reproductive: stressReproductive,
+    metabolic_cardio: cleanMetabolic,
+    stress_reproductive: cleanStress,
   };
 }
 
@@ -220,19 +234,55 @@ async function runMoodAll(userId) {
     ])
   );
 
+  // Run all mood groups concurrently
   const entries = await timed('mood.groups', () =>
     Promise.all(
       Object.keys(MOOD_GROUPS).map(group =>
-        runMoodGroup(userId, group, featureVector, logsCount).catch(groupError)
+        (async () => {
+          const diseases = MOOD_GROUPS[group];
+          const predictions = await runDiseasePredictions(featureVector, diseases);
+          return {
+            success: true,
+            data: {
+              group,
+              diseases_assessed: diseases,
+              logs_used: logsCount,
+              highest_risk: moodFindHighestRisk(predictions),
+              any_flag_raised: moodAnyFlagRaised(predictions),
+              predictions,
+            },
+            _predictions: predictions, // For batch save
+          };
+        })().catch(groupError)
       )
     )
   );
 
+  // Batch save all mood predictions in one DB operation
+  const groupPredictions = {};
+  entries.forEach((entry, i) => {
+    if (entry && entry.success && entry._predictions) {
+      const groupName = Object.keys(MOOD_GROUPS)[i];
+      groupPredictions[groupName] = { predictions: entry._predictions };
+    }
+  });
+  
+  await timed('mood.save_batch', () => saveMoodPredictionsBatch(userId, groupPredictions, logsCount));
+
+  // Remove internal _predictions field from response
+  const cleanEntries = entries.map(entry => {
+    if (entry && entry._predictions) {
+      const { _predictions, ...rest } = entry;
+      return rest;
+    }
+    return entry;
+  });
+
   return {
-    mental_health: entries[0],
-    metabolic: entries[1],
-    cardio_neuro: entries[2],
-    reproductive: entries[3],
+    mental_health: cleanEntries[0],
+    metabolic: cleanEntries[1],
+    cardio_neuro: cleanEntries[2],
+    reproductive: cleanEntries[3],
   };
 }
 
