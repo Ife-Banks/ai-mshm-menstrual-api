@@ -234,6 +234,16 @@ router.post('/all', auth, resolveUser, async (req, res, next) => {
     const userId = req.dbUser.id;
     const requestId = req.requestId;
 
+    // Add simple in-memory cache for 30 seconds to avoid repeated identical requests
+    const cacheKey = `batch-${userId}-${requestId}`;
+    if (predict.routes.cache && predict.routes.cache.has(cacheKey)) {
+      const cached = predict.routes.cache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 30000) {
+        console.log(`[predict-all] Returning cached result for ${userId}`);
+        return res.json(cached.response);
+      }
+    }
+
     const batchStart = process.hrtime.bigint();
     const [menstrual, rppg, rppg_v8, mood] = await Promise.all([
       timed('menstrual', () => runMenstrualGroup(userId)).catch(groupError),
@@ -244,7 +254,7 @@ router.post('/all', auth, resolveUser, async (req, res, next) => {
     const batchMs = Number(process.hrtime.bigint() - batchStart) / 1e6;
     console.log(`[predict-all] TOTAL: ${batchMs.toFixed(0)}ms`);
 
-    res.json({
+    const response = {
       success: true,
       status: 200,
       message: 'All predictions computed',
@@ -259,7 +269,18 @@ router.post('/all', auth, resolveUser, async (req, res, next) => {
         timestamp: new Date().toISOString(),
         version: '1.0.0',
       },
+    };
+
+    // Cache the result for 30 seconds
+    if (!predict.routes.cache) {
+      predict.routes.cache = new Map();
+    }
+    predict.routes.cache.set(cacheKey, {
+      timestamp: Date.now(),
+      response,
     });
+
+    res.json(response);
   } catch (err) {
     next(err);
   }
