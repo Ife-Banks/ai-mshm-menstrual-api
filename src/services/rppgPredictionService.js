@@ -383,8 +383,9 @@ async function saveRppgPredictionResult({
 }
 
 /**
- * Save rPPG prediction results for multiple groups in a single batch operation.
- * This reduces 2 separate DB writes to 1, improving latency by ~50%.
+ * Save rPPG prediction results for multiple groups.
+ * Note: createMany() doesn't support nested relations, so we use individual create() calls.
+ * This is still efficient since we're running them in parallel.
  */
 async function saveRppgPredictionsBatch(userId, groupPredictions, featureSnapshot, clinicalFlags, sessions, nSessions) {
   const sessionConnect = sessions?.length ? sessions.map(s => ({ id: s.id })) : [];
@@ -420,8 +421,10 @@ async function saveRppgPredictionsBatch(userId, groupPredictions, featureSnapsho
 
   if (records.length === 0) return [];
 
-  // Use createMany for batch insert
-  return prisma.rppgPredictionResult.createMany({ data: records });
+  // Use individual create() calls with relations (createMany doesn't support relations)
+  return Promise.all(
+    records.map(record => prisma.rppgPredictionResult.create({ data: record }))
+  );
 }
 
 /**
