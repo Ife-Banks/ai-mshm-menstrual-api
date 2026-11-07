@@ -13,6 +13,7 @@ const {
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  runRppgAllPredictions,
   buildPredictionResponse,
   MIN_REQUIREMENTS,
   DISEASE_FIELD_PREFIX,
@@ -336,6 +337,46 @@ router.post('/predict/anomaly', auth, resolveUser, async (req, res, next) => {
         },
         interpretation,
       },
+      meta: requestMeta(req),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/rppg/predict/all:
+ *   post:
+ *     summary: Run all rPPG predictions concurrently
+ *     description: Runs both metabolic-cardio and stress-reproductive predictions in a single request. Fetches sessions and builds feature vector once, then runs both groups concurrently.
+ *     tags: [rPPG / HRV]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Combined metabolic-cardio and stress-reproductive predictions
+ *       422:
+ *         description: Not enough rPPG data
+ */
+router.post('/predict/all', auth, resolveUser, async (req, res, next) => {
+  try {
+    const result = await runRppgAllPredictions(req.dbUser.id);
+    
+    if (result.sessions_used === 0) {
+      return res.status(422).json({
+        success: false,
+        status: 422,
+        message: 'Insufficient rPPG data for predictions',
+        meta: requestMeta(req),
+      });
+    }
+
+    res.json({
+      success: true,
+      status: 200,
+      message: 'rPPG predictions computed (metabolic-cardio + stress-reproductive)',
+      data: result,
       meta: requestMeta(req),
     });
   } catch (err) {

@@ -34,11 +34,37 @@ const MOOD_GROUPS = {
 };
 
 function groupError(err) {
+  console.error('[predict-all] group failed:', err);
   return {
     success: false,
     status: err.status || 500,
     message: err.message || 'Prediction failed',
   };
+}
+
+// Per-user batch cache — keyed by userId only (requestId is unique per call
+// and made the previous cache useless). Entries expire after 30s.
+const BATCH_CACHE_TTL_MS = 30000;
+const batchCache = new Map();
+
+function getBatchCache(key) {
+  const entry = batchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp >= BATCH_CACHE_TTL_MS) {
+    batchCache.delete(key);
+    return null;
+  }
+  return entry.response;
+}
+
+function setBatchCache(key, response) {
+  if (batchCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of batchCache) {
+      if (now - v.timestamp >= BATCH_CACHE_TTL_MS) batchCache.delete(k);
+    }
+  }
+  batchCache.set(key, { timestamp: Date.now(), response });
 }
 
 async function timed(label, fn) {
@@ -234,22 +260,31 @@ router.post('/all', auth, resolveUser, async (req, res, next) => {
     const userId = req.dbUser.id;
     const requestId = req.requestId;
 
-    // Add simple in-memory cache for 30 seconds to avoid repeated identical requests
-    const cacheKey = `batch-${userId}-${requestId}`;
-    if (predict.routes.cache && predict.routes.cache.has(cacheKey)) {
-      const cached = predict.routes.cache.get(cacheKey);
-      if (Date.now() - cached.timestamp < 30000) {
-        console.log(`[predict-all] Returning cached result for ${userId}`);
-        return res.json(cached.response);
-      }
+    // Groups the caller asked to skip (e.g. Django skips menstrual for male
+    // users — the model has no valid male meaning).
+    const rawSkip = req.body?.skip ?? req.query?.skip;
+    const skip = new Set(
+      (Array.isArray(rawSkip) ? rawSkip : rawSkip ? [rawSkip] : [])
+        .flatMap(s => String(s).split(','))
+        .map(s => s.trim())
+        .filter(Boolean)
+    );
+
+    const cacheKey = `batch-${userId}`;
+    const cached = getBatchCache(cacheKey);
+    if (cached) {
+      console.log(`[predict-all] Returning cached result for ${userId}`);
+      return res.json(cached);
     }
 
     const batchStart = process.hrtime.bigint();
+    const skipped = (name) =>
+      Promise.resolve({ success: false, status: 200, message: `Skipped: ${name}`, skipped: true });
     const [menstrual, rppg, rppg_v8, mood] = await Promise.all([
-      timed('menstrual', () => runMenstrualGroup(userId)).catch(groupError),
+      skip.has('menstrual') ? skipped('menstrual') : timed('menstrual', () => runMenstrualGroup(userId)).catch(groupError),
       timed('rppg', () => runRppgAll(userId, requestId)).catch(groupError),
-      timed('rppg_v8', () => runV8Group(userId)).catch(groupError),
-      timed('mood', () => runMoodAll(userId)).catch(groupError),
+      skip.has('rppg_v8') ? skipped('rppg_v8') : timed('rppg_v8', () => runV8Group(userId)).catch(groupError),
+      skip.has('mood') ? skipped('mood') : timed('mood', () => runMoodAll(userId)).catch(groupError),
     ]);
     const batchMs = Number(process.hrtime.bigint() - batchStart) / 1e6;
     console.log(`[predict-all] TOTAL: ${batchMs.toFixed(0)}ms`);
@@ -272,13 +307,7 @@ router.post('/all', auth, resolveUser, async (req, res, next) => {
     };
 
     // Cache the result for 30 seconds
-    if (!predict.routes.cache) {
-      predict.routes.cache = new Map();
-    }
-    predict.routes.cache.set(cacheKey, {
-      timestamp: Date.now(),
-      response,
-    });
+    setBatchCache(cacheKey, response);
 
     res.json(response);
   } catch (err) {

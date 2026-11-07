@@ -116,10 +116,10 @@ async function predictMoodCheck(vector) {
   };
 }
 
-async function timed(label, promise) {
+async function timed(label, fn) {
   const start = process.hrtime.bigint();
   try {
-    return await promise;
+    return await (typeof fn === 'function' ? fn() : fn);
   } finally {
     const ms = Number(process.hrtime.bigint() - start) / 1e6;
     console.log(`[rppg-v8] ${label}: ${ms.toFixed(0)}ms`);

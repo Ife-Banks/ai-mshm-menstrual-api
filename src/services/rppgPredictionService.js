@@ -382,11 +382,116 @@ async function saveRppgPredictionResult({
   });
 }
 
+/**
+ * Run both rPPG prediction groups concurrently and return combined results.
+ * This avoids fetching sessions and building feature vectors twice.
+ */
+async function runRppgAllPredictions(userId) {
+  const reqsMetabolic = MIN_REQUIREMENTS.metabolic_cardio;
+  const reqsStress = MIN_REQUIREMENTS.stress_reproductive;
+  
+  // Use the stricter requirements (metabolic_cardio needs more sessions)
+  const maxSessions = Math.max(reqsMetabolic.minSessions, reqsStress.minSessions);
+  const maxSpanDays = Math.max(reqsMetabolic.minSpanDays, reqsStress.minSpanDays);
+  
+  // Build feature vector once with the stricter requirements
+  let featureData;
+  try {
+    featureData = await buildRppgFeatureVector(userId, maxSessions, maxSpanDays);
+  } catch (err) {
+    // If insufficient data, return empty predictions for both groups
+    return {
+      metabolic_cardio: {
+        success: false,
+        message: err.message,
+        predictions: {},
+      },
+      stress_reproductive: {
+        success: false,
+        message: err.message,
+        predictions: {},
+      },
+      sessions_used: 0,
+      days_span: 0,
+    };
+  }
+  
+  const { featureVector, featureSnapshot, clinicalFlags, nSessions, sessions } = featureData;
+  
+  // Run both groups concurrently
+  const [metabolicResult, stressResult] = await Promise.allSettled([
+    (async () => {
+      const predictions = await runRppgPredictions(featureVector, ['CVD', 'T2D', 'Metabolic', 'HeartFailure']);
+      
+      // Override CVD/Metabolic if RMSSD is not declining
+      if (clinicalFlags.RMSSD_Declining_Flag !== 1) {
+        const trendWarning = 'Prediction overridden: RMSSD is not showing a declining trend over the measurement period. CVD/Metabolic risk requires a sustained HRV decline.';
+        for (const disease of ['CVD', 'Metabolic']) {
+          if (predictions[disease]) {
+            predictions[disease].risk_score_overridden = true;
+            predictions[disease].risk_score = null;
+            predictions[disease].risk_flag = 0;
+            predictions[disease].severity = 'Insufficient';
+            predictions[disease].insufficient_trend_data = true;
+            predictions[disease].warning = trendWarning;
+          }
+        }
+      }
+      
+      return predictions;
+    })(),
+    runRppgPredictions(featureVector, ['Stress', 'Infertility'])
+  ]);
+  
+  const metabolicPredictions = metabolicResult.status === 'fulfilled' ? metabolicResult.value : {};
+  const stressPredictions = stressResult.status === 'fulfilled' ? stressResult.value : {};
+  
+  // Save results to database
+  const [metabolicSaved, stressSaved] = await Promise.allSettled([
+    saveRppgPredictionResult({
+      userId,
+      group: 'metabolic_cardio',
+      featureSnapshot,
+      clinicalFlags,
+      predictions: metabolicPredictions,
+      sessions,
+      nSessions,
+    }),
+    saveRppgPredictionResult({
+      userId,
+      group: 'stress_reproductive',
+      featureSnapshot,
+      clinicalFlags,
+      predictions: stressPredictions,
+      sessions,
+      nSessions,
+    }),
+  ]);
+  
+  return {
+    metabolic_cardio: {
+      success: true,
+      predictions: metabolicPredictions,
+      reliability: buildReliability(clinicalFlags, nSessions, 'metabolic_cardio'),
+    },
+    stress_reproductive: {
+      success: true,
+      predictions: stressPredictions,
+      reliability: buildReliability(clinicalFlags, nSessions, 'stress_reproductive'),
+    },
+    sessions_used: nSessions,
+    days_span: clinicalFlags.SpanDays || 0,
+    clinical_flags: clinicalFlags,
+    feature_snapshot: featureSnapshot,
+  };
+}
+
 module.exports = {
   buildRppgFeatureVector,
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  runRppgAllPredictions,
   applyScaler,
   buildReliability,
   buildPredictionResponse,
