@@ -127,21 +127,21 @@ async function timed(label, fn) {
 }
 
 async function predictAll(userId) {
-  // Fetch latest session and count in a single query using findFirst with count
-  // This reduces Neon DB round-trips by 50% (was 2 queries, now 1)
-  const last = await timed('fetchV8Sessions', () =>
-    prisma.rppgV8Session.findFirst({
-      where: { userId },
-      orderBy: { capturedAt: 'desc' },
-      include: { _count: { select: { id: true } } },
-    })
+  // Fetch session count and latest session concurrently
+  const [nSessions, last] = await timed('fetchV8Sessions', () =>
+    Promise.all([
+      prisma.rppgV8Session.count({ where: { userId } }),
+      prisma.rppgV8Session.findFirst({
+        where: { userId },
+        orderBy: { capturedAt: 'desc' },
+      }),
+    ])
   );
-  
+
   if (!last) {
     return { error: 'NO_V8_DATA', message: 'No rPPG v8 sessions found for this user.' };
   }
-  
-  const nSessions = last._count?.id || 0;
+
   const vector = buildUnifiedVector(last);
 
   const regressionTargets = Object.keys(PER_TARGET_FEATURES);
