@@ -13,6 +13,10 @@ const {
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  saveRppgPredictionsBatch,
+  runRppgAllPredictions,
+  buildPredictionResponse,
+  MIN_REQUIREMENTS,
   DISEASE_FIELD_PREFIX,
 } = require('../services/rppgPredictionService');
 
@@ -21,13 +25,6 @@ const router = express.Router();
 const DISEASE_GROUPS = {
   metabolic_cardio: ['CVD', 'T2D', 'Metabolic', 'HeartFailure'],
   stress_reproductive: ['Stress', 'Infertility'],
-};
-
-// Minimum data requirements per prediction type
-const MIN_REQUIREMENTS = {
-  metabolic_cardio: { minSessions: 3, minSpanDays: 7 },
-  stress_reproductive: { minSessions: 3, minSpanDays: 7 },
-  anomaly: { minSessions: 1, minSpanDays: 0 },
 };
 
 const rppgSessionSchema = Joi.object({
@@ -67,60 +64,6 @@ function validate(schema) {
     }
     req.body = value;
     next();
-  };
-}
-
-function buildReliability(clinicalFlags, nSessions, diseaseGroup) {
-  const req = MIN_REQUIREMENTS[diseaseGroup] || { minSessions: 1, minSpanDays: 0 };
-  const sessionsMet = nSessions >= req.minSessions;
-  const spanMet = (clinicalFlags.SpanDays || 0) >= req.minSpanDays;
-  let dataQuality;
-  if (diseaseGroup === 'metabolic_cardio') {
-    dataQuality = sessionsMet && spanMet && clinicalFlags.RMSSD_Declining_Flag === 1 ? 'good' : 'insufficient';
-  } else {
-    dataQuality = sessionsMet && spanMet ? 'good' : 'insufficient';
-  }
-  return {
-    sessions_used: nSessions,
-    days_span: clinicalFlags.SpanDays || 0,
-    sessions_required: req.minSessions,
-    days_required: req.minSpanDays,
-    has_declining_rmssd_trend: clinicalFlags.RMSSD_Declining_Flag === 1,
-    rmssd_slope: clinicalFlags.RMSSD_Slope || 0,
-    data_quality: dataQuality,
-    disclaimer: 'Predictions are based on HRV-biometric models. Not a clinical diagnosis.',
-  };
-}
-
-function buildPredictionResponse({
-  message,
-  group,
-  diseases,
-  featureSnapshot,
-  clinicalFlags,
-  predictions,
-  sessionsUsed,
-  requestId,
-}) {
-  const anyFlag = Object.values(predictions).some(d => d.risk_flag === 1);
-  return {
-    success: true,
-    status: 200,
-    message,
-    data: {
-      group,
-      diseases_assessed: diseases,
-      sessions_used: sessionsUsed,
-      any_flag_raised: anyFlag,
-      feature_snapshot: featureSnapshot,
-      clinical_flags: clinicalFlags,
-      predictions,
-      reliability: buildReliability(clinicalFlags, sessionsUsed, group),
-    },
-    meta: {
-      request_id: requestId,
-      timestamp: new Date().toISOString(),
-    },
   };
 }
 
@@ -404,6 +347,46 @@ router.post('/predict/anomaly', auth, resolveUser, async (req, res, next) => {
 
 /**
  * @swagger
+ * /api/v1/rppg/predict/all:
+ *   post:
+ *     summary: Run all rPPG predictions concurrently
+ *     description: Runs both metabolic-cardio and stress-reproductive predictions in a single request. Fetches sessions and builds feature vector once, then runs both groups concurrently.
+ *     tags: [rPPG / HRV]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Combined metabolic-cardio and stress-reproductive predictions
+ *       422:
+ *         description: Not enough rPPG data
+ */
+router.post('/predict/all', auth, resolveUser, async (req, res, next) => {
+  try {
+    const result = await runRppgAllPredictions(req.dbUser.id);
+    
+    if (result.sessions_used === 0) {
+      return res.status(422).json({
+        success: false,
+        status: 422,
+        message: 'Insufficient rPPG data for predictions',
+        meta: requestMeta(req),
+      });
+    }
+
+    res.json({
+      success: true,
+      status: 200,
+      message: 'rPPG predictions computed (metabolic-cardio + stress-reproductive)',
+      data: result,
+      meta: requestMeta(req),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @swagger
  * /api/v1/rppg/sessions:
  *   get:
  *     summary: List recent rPPG sessions
@@ -417,7 +400,8 @@ router.post('/predict/anomaly', auth, resolveUser, async (req, res, next) => {
  */
 router.get('/sessions', auth, resolveUser, async (req, res, next) => {
   try {
-    const sessions = await getSessionHistory(req.dbUser.id);
+    const limit = parseInt(req.query.limit) || 30;
+    const sessions = await getSessionHistory(req.dbUser.id, Math.min(limit, 100));
     res.json({
       success: true,
       status: 200,

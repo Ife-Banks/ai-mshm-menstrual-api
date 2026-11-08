@@ -7,8 +7,10 @@ const authRoutes = require('./auth.routes');
 const moodRoutes = require('./mood.routes');
 const rppgRouter = require('./rppg.routes');
 const rppgV8Router = require('./rppgV8.routes');
+const predictRouter = require('./predict.routes');
 
 router.use('/menstrual', predictionRoutes);
+router.use('/predict', predictRouter);
 router.use('/mood', moodRoutes);
 router.use('/', healthRoutes);
 router.use('/auth', authRoutes);

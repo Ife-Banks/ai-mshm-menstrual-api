@@ -143,12 +143,16 @@ async function predict(inputPayload) {
 
   const results = {};
 
-  for (const disease of diseases) {
+  await Promise.all(diseases.map(async (disease) => {
     const clf = sessions.classifiers[disease];
     const reg = sessions.regressors[disease];
 
-    const [clfOut] = Object.values(await clf.run({ float_input: tensor }));
-    const [regOut] = Object.values(await reg.run({ float_input: tensor }));
+    const [clfResult, regResult] = await Promise.all([
+      clf.run({ float_input: tensor }),
+      reg.run({ float_input: tensor }),
+    ]);
+    const clfOut = Object.values(clfResult)[0];
+    const regOut = Object.values(regResult)[0];
 
 const probData = clfOut.data;
 const risk_probability = probData.length >= 2
@@ -168,7 +172,7 @@ const risk_probability = probData.length >= 2
       severity,
       threshold_used: threshold,
     };
-  }
+  }));
 
   return {
     predictions: results,

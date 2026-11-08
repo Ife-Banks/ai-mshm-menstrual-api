@@ -59,6 +59,67 @@ const FIELD_PREFIX = {
   Infertility: 'infertility',
 };
 
+// Minimum data requirements per prediction type
+const MIN_REQUIREMENTS = {
+  metabolic_cardio: { minSessions: 3, minSpanDays: 7 },
+  stress_reproductive: { minSessions: 3, minSpanDays: 7 },
+  anomaly: { minSessions: 1, minSpanDays: 0 },
+};
+
+function buildReliability(clinicalFlags, nSessions, diseaseGroup) {
+  const req = MIN_REQUIREMENTS[diseaseGroup] || { minSessions: 1, minSpanDays: 0 };
+  const sessionsMet = nSessions >= req.minSessions;
+  const spanMet = (clinicalFlags.SpanDays || 0) >= req.minSpanDays;
+  let dataQuality;
+  if (diseaseGroup === 'metabolic_cardio') {
+    dataQuality = sessionsMet && spanMet && clinicalFlags.RMSSD_Declining_Flag === 1 ? 'good' : 'insufficient';
+  } else {
+    dataQuality = sessionsMet && spanMet ? 'good' : 'insufficient';
+  }
+  return {
+    sessions_used: nSessions,
+    days_span: clinicalFlags.SpanDays || 0,
+    sessions_required: req.minSessions,
+    days_required: req.minSpanDays,
+    has_declining_rmssd_trend: clinicalFlags.RMSSD_Declining_Flag === 1,
+    rmssd_slope: clinicalFlags.RMSSD_Slope || 0,
+    data_quality: dataQuality,
+    disclaimer: 'Predictions are based on HRV-biometric models. Not a clinical diagnosis.',
+  };
+}
+
+function buildPredictionResponse({
+  message,
+  group,
+  diseases,
+  featureSnapshot,
+  clinicalFlags,
+  predictions,
+  sessionsUsed,
+  requestId,
+}) {
+  const anyFlag = Object.values(predictions).some(d => d.risk_flag === 1);
+  return {
+    success: true,
+    status: 200,
+    message,
+    data: {
+      group,
+      diseases_assessed: diseases,
+      sessions_used: sessionsUsed,
+      any_flag_raised: anyFlag,
+      feature_snapshot: featureSnapshot,
+      clinical_flags: clinicalFlags,
+      predictions,
+      reliability: buildReliability(clinicalFlags, sessionsUsed, group),
+    },
+    meta: {
+      request_id: requestId,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 // HeartFailure had only 2 positive samples in the 529-subject training set
 const UNRELIABLE_DISEASES = new Set(['HeartFailure']);
 
@@ -182,7 +243,7 @@ async function runRppgPredictions(featureVector, diseaseList) {
 
   const results = {};
 
-  for (const disease of diseaseList) {
+  await Promise.all(diseaseList.map(async (disease) => {
     const clf = sessions.classifiers[disease];
     const reg = sessions.regressors[disease];
 
@@ -195,19 +256,21 @@ async function runRppgPredictions(featureVector, diseaseList) {
         threshold_used: meta.flag_thresholds?.[disease] ?? null,
         reliability_warning: null,
       };
-      continue;
+      return;
     }
 
     try {
-      const clfOut = Object.values(await clf.run({ float_input: tensor }));
-      const regOut = Object.values(await reg.run({ float_input: tensor }));
+      const [clfOut, regOut] = await Promise.all([
+        clf.run({ float_input: tensor }),
+        reg.run({ float_input: tensor }),
+      ]);
 
-      const probData = clfOut[0]?.data ?? [];
+      const probData = Object.values(clfOut)[0]?.data ?? [];
       const riskProbability = probData.length >= 2
         ? parseFloat(Number(probData[1]).toFixed(4))
         : parseFloat(Number(probData[0] ?? 0).toFixed(4));
 
-      const rawScore = parseFloat(Number(regOut[0]?.data[0] ?? 0).toFixed(4));
+      const rawScore = parseFloat(Number(Object.values(regOut)[0]?.data[0] ?? 0).toFixed(4));
       const riskScore = Math.min(1, Math.max(0, rawScore));
 
       const threshold = meta.flag_thresholds?.[disease] ?? 0.4;
@@ -239,7 +302,7 @@ async function runRppgPredictions(featureVector, diseaseList) {
         reliability_warning: `Model error: ${err.message}`,
       };
     }
-  }
+  }));
 
   return results;
 }
@@ -319,11 +382,156 @@ async function saveRppgPredictionResult({
   });
 }
 
+/**
+ * Save rPPG prediction results for multiple groups.
+ * Note: createMany() doesn't support nested relations, so we use individual create() calls.
+ * This is still efficient since we're running them in parallel.
+ */
+async function saveRppgPredictionsBatch(userId, groupPredictions, featureSnapshot, clinicalFlags, sessions, nSessions) {
+  const sessionConnect = sessions?.length ? sessions.map(s => ({ id: s.id })) : [];
+  
+  const records = Object.entries(groupPredictions).map(([group, predictions]) => {
+    if (!predictions || Object.keys(predictions).length === 0) return null;
+    
+    const diseasePayload = buildDiseasePayload(predictions);
+    return {
+      userId,
+      group,
+      nSessionsUsed: nSessions,
+      rmssdMean: featureSnapshot.RMSSD_mean,
+      rmssdMin: featureSnapshot.RMSSD_min,
+      rmssdStd: featureSnapshot.RMSSD_std,
+      tempMean: featureSnapshot.Temp_mean,
+      tempStd: featureSnapshot.Temp_std,
+      edaMean: featureSnapshot.EDA_mean,
+      edaMax: featureSnapshot.EDA_max,
+      edaStd: featureSnapshot.EDA_std,
+      lowRmssdFlag: clinicalFlags.LowRMSSD_Flag,
+      modLowRmssdFlag: clinicalFlags.ModLowRMSSD_Flag,
+      highEdaFlag: clinicalFlags.HighEDA_Flag,
+      highAsiFlag: clinicalFlags.HighASI_Flag ?? 0,
+      anomalyFlag: null,
+      anomalyScore: null,
+      sessions: {
+        connect: sessionConnect,
+      },
+      ...diseasePayload,
+    };
+  }).filter(Boolean);
+
+  if (records.length === 0) return [];
+
+  // Use individual create() calls with relations (createMany doesn't support relations)
+  return Promise.all(
+    records.map(record => prisma.rppgPredictionResult.create({ data: record }))
+  );
+}
+
+/**
+ * Run both rPPG prediction groups concurrently and return combined results.
+ * This avoids fetching sessions and building feature vectors twice.
+ */
+async function runRppgAllPredictions(userId) {
+  const reqsMetabolic = MIN_REQUIREMENTS.metabolic_cardio;
+  const reqsStress = MIN_REQUIREMENTS.stress_reproductive;
+  
+  // Use the stricter requirements (metabolic_cardio needs more sessions)
+  const maxSessions = Math.max(reqsMetabolic.minSessions, reqsStress.minSessions);
+  const maxSpanDays = Math.max(reqsMetabolic.minSpanDays, reqsStress.minSpanDays);
+  
+  // Build feature vector once with the stricter requirements
+  let featureData;
+  try {
+    featureData = await buildRppgFeatureVector(userId, maxSessions, maxSpanDays);
+  } catch (err) {
+    // If insufficient data, return empty predictions for both groups
+    return {
+      metabolic_cardio: {
+        success: false,
+        message: err.message,
+        predictions: {},
+      },
+      stress_reproductive: {
+        success: false,
+        message: err.message,
+        predictions: {},
+      },
+      sessions_used: 0,
+      days_span: 0,
+    };
+  }
+  
+  const { featureVector, featureSnapshot, clinicalFlags, nSessions, sessions } = featureData;
+  
+  // Run both groups concurrently
+  const [metabolicResult, stressResult] = await Promise.allSettled([
+    (async () => {
+      const predictions = await runRppgPredictions(featureVector, ['CVD', 'T2D', 'Metabolic', 'HeartFailure']);
+      
+      // Override CVD/Metabolic if RMSSD is not declining
+      if (clinicalFlags.RMSSD_Declining_Flag !== 1) {
+        const trendWarning = 'Prediction overridden: RMSSD is not showing a declining trend over the measurement period. CVD/Metabolic risk requires a sustained HRV decline.';
+        for (const disease of ['CVD', 'Metabolic']) {
+          if (predictions[disease]) {
+            predictions[disease].risk_score_overridden = true;
+            predictions[disease].risk_score = null;
+            predictions[disease].risk_flag = 0;
+            predictions[disease].severity = 'Insufficient';
+            predictions[disease].insufficient_trend_data = true;
+            predictions[disease].warning = trendWarning;
+          }
+        }
+      }
+      
+      return predictions;
+    })(),
+    runRppgPredictions(featureVector, ['Stress', 'Infertility'])
+  ]);
+  
+  const metabolicPredictions = metabolicResult.status === 'fulfilled' ? metabolicResult.value : {};
+  const stressPredictions = stressResult.status === 'fulfilled' ? stressResult.value : {};
+  
+  // Batch save both groups in one DB operation
+  const groupPredictions = {};
+  if (Object.keys(metabolicPredictions).length > 0) {
+    groupPredictions.metabolic_cardio = metabolicPredictions;
+  }
+  if (Object.keys(stressPredictions).length > 0) {
+    groupPredictions.stress_reproductive = stressPredictions;
+  }
+  
+  await Promise.allSettled([
+    saveRppgPredictionsBatch(userId, groupPredictions, featureSnapshot, clinicalFlags, sessions, nSessions),
+  ]);
+  
+  return {
+    metabolic_cardio: {
+      success: true,
+      predictions: metabolicPredictions,
+      reliability: buildReliability(clinicalFlags, nSessions, 'metabolic_cardio'),
+    },
+    stress_reproductive: {
+      success: true,
+      predictions: stressPredictions,
+      reliability: buildReliability(clinicalFlags, nSessions, 'stress_reproductive'),
+    },
+    sessions_used: nSessions,
+    days_span: clinicalFlags.SpanDays || 0,
+    clinical_flags: clinicalFlags,
+    feature_snapshot: featureSnapshot,
+  };
+}
+
 module.exports = {
   buildRppgFeatureVector,
   runRppgPredictions,
   runAnomalyDetection,
   saveRppgPredictionResult,
+  saveRppgPredictionsBatch,
+  runRppgAllPredictions,
   applyScaler,
+  buildReliability,
+  buildPredictionResponse,
+  MIN_REQUIREMENTS,
   DISEASE_FIELD_PREFIX: FIELD_PREFIX,
 };

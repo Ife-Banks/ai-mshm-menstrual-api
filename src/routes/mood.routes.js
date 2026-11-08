@@ -14,7 +14,17 @@ const DISEASE_GROUPS = {
   reproductive: ['Infertility_Mood']
 };
 
+// Debounce: skip retriggering full inference if one ran for this user recently
+// (users fill PHQ-4/Affect/Focus/Sleep as separate screens — each fires this).
+const MOOD_PREDICT_MIN_INTERVAL_MS = 60 * 1000;
+const lastMoodPredictRun = new Map();
+
 async function triggerMoodPredictions(userId) {
+  const now = Date.now();
+  const lastRun = lastMoodPredictRun.get(userId) || 0;
+  if (now - lastRun < MOOD_PREDICT_MIN_INTERVAL_MS) return;
+  lastMoodPredictRun.set(userId, now);
+
   const logs = await getAllUserLogs(userId);
   if (logs.length < 3) return;
 
@@ -486,10 +496,11 @@ router.post('/log/complete', auth, resolveUser, validate(schemas.complete), asyn
  */
 router.get('/history', auth, resolveUser, async (req, res, next) => {
   try {
+    const limit = parseInt(req.query.limit) || 30;
     const logs = await prisma.moodDailyLog.findMany({
       where: { userId: req.dbUser.id },
       orderBy: { logDate: 'desc' },
-      take: 30,
+      take: Math.min(limit, 100),
     });
     res.json({
       success: true, status: 200,
